@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / C extensions
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Caches and temporary files
+.cache/
+*.tmp
+*.temp
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Logs
+*.log
+
+# PyInstaller build artifacts (keep .spec)
+*.manifest

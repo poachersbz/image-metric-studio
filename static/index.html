@@ -1,0 +1,2432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metric Studio — Image & Volume Similarity Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  :root, body{
+    --bg:#0a0b0d; --panel:#101216; --panel2:#14171c; --line:rgba(255,255,255,0.08);
+    --line2:rgba(255,255,255,0.05); --main:#e8eaed; --muted:#868b94; --faint:#565b63;
+    --signal:#35c6e0; --success:#35d08a; --warning:#e0a52e; --danger:#f0604d;
+  }
+  body{background:var(--bg);color:var(--main);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;}
+  ::selection{background:rgba(53,198,224,0.28);}
+  a{color:var(--signal);text-decoration:none;}
+  ::-webkit-scrollbar{width:9px;height:9px;} ::-webkit-scrollbar-thumb{background:#22262d;} ::-webkit-scrollbar-track{background:transparent;}
+  select{-webkit-appearance:none;appearance:none;}
+  select option{background:#101216;color:#e8eaed;}
+  input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;height:20px;width:100%;}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,var(--signal),#22262d);}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;background:var(--signal);margin-top:-7px;box-shadow:0 0 0 3px rgba(53,198,224,0.15);}
+  input[type=range]::-moz-range-track{height:2px;background:#22262d;}
+  input[type=range]::-moz-range-thumb{border:none;width:12px;height:16px;background:var(--signal);}
+
+  .bggrid{position:fixed;inset:0;pointer-events:none;z-index:0;background-image:linear-gradient(rgba(255,255,255,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.018) 1px,transparent 1px);background-size:44px 44px;}
+  .container{position:relative;z-index:1;max-width:1600px;margin:0 auto;padding:0 22px 64px;transition:max-width .2s ease;}
+  .container.focus-layout{max-width:100%;padding:0 18px 64px;}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 2px 22px;flex-wrap:wrap;}
+  .logo{display:flex;align-items:center;gap:14px;}
+  .logo-mark{width:26px;height:26px;border:1px solid var(--signal);position:relative;flex:none;}
+  .logo-mark::after{content:'';position:absolute;inset:5px;background:var(--signal);opacity:0.9;}
+  .logo-text{display:flex;flex-direction:column;line-height:1.15;}
+  .logo-title{font:600 15px 'IBM Plex Mono',monospace;letter-spacing:0.02em;}
+  .logo-sub{font:500 10px 'IBM Plex Mono',monospace;letter-spacing:0.2em;color:var(--faint);text-transform:uppercase;}
+  .chips{display:flex;align-items:center;gap:8px;font:500 10.5px 'IBM Plex Mono',monospace;letter-spacing:0.12em;color:var(--muted);}
+  .mode-tabs{display:flex;gap:4px;border:1px solid var(--line);padding:2px;background:#0c0e12;}
+  .mode-tab{padding:6px 14px;background:transparent;border:none;color:var(--muted);font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:0.12em;cursor:pointer;text-transform:uppercase;}
+  .mode-tab.active{background:rgba(53,198,224,0.14);color:var(--signal);border:1px solid rgba(53,198,224,0.4);}
+  .chip{padding:5px 9px;border:1px solid var(--line);color:var(--faint);}
+  .chip-ready{border-color:rgba(53,208,138,0.35);color:var(--success);display:flex;align-items:center;gap:6px;}
+  .dot{width:6px;height:6px;background:var(--success);border-radius:50%;box-shadow:0 0 6px var(--success);}
+  .hr{height:1px;background:var(--line);margin-bottom:26px;}
+
+  .main-grid{display:grid;grid-template-columns:340px 1fr;gap:22px;align-items:start;}
+  @media (max-width:900px){.main-grid{grid-template-columns:1fr;}}
+  aside{display:flex;flex-direction:column;gap:16px;position:sticky;top:18px;}
+  @media (max-width:900px){aside{position:static;}}
+
+  section.panel{background:var(--panel);border:1px solid var(--line);padding:18px;}
+  .sec-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .sec-num{font:600 11px 'IBM Plex Mono',monospace;letter-spacing:0.16em;color:var(--signal);}
+  .sec-title{font:600 11px 'IBM Plex Mono',monospace;letter-spacing:0.16em;color:var(--muted);text-transform:uppercase;}
+  .sec-line{flex:1;height:1px;background:var(--line);}
+  .sec-action{flex:none;padding:5px 9px;background:transparent;border:1px solid var(--line);color:var(--muted);font:500 9.5px 'IBM Plex Mono',monospace;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+  .sec-action:hover{border-color:var(--signal);color:var(--main);}
+
+  /* Viewer standalone UI */
+  .viewer-grid{display:none;grid-template-columns:340px 1fr;gap:22px;align-items:start;}
+  @media (max-width:900px){.viewer-grid{grid-template-columns:1fr;}}
+  .viewer-frame-wrap{background:var(--panel);border:1px solid var(--line);padding:18px;}
+  .viewer-frame{position:relative;width:100%;height:580px;margin:14px auto 0;background:#000;border:1px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;box-sizing:border-box;}
+  .viewer-frame.view-size-compact{height:400px;max-width:500px;}
+  .viewer-frame.view-size-medium{height:540px;max-width:700px;}
+  .viewer-frame.view-size-large{height:760px;max-width:100%;}
+  .viewer-frame.probe-active{cursor:crosshair;}
+  .viewer-frame img{width:100%;height:100%;object-fit:contain;display:none;margin:auto;}
+  .viewer-probe-hud{position:absolute;top:10px;right:10px;background:rgba(4,18,26,0.85);border:1px solid var(--signal);padding:6px 10px;font:500 11px 'IBM Plex Mono',monospace;color:var(--signal);pointer-events:none;display:none;z-index:10;}
+  .viewer-controls-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center;}
+  .btn-cine{padding:8px 14px;background:transparent;border:1px solid var(--line);color:var(--signal);font:600 11px 'IBM Plex Mono',monospace;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;}
+  .btn-cine:hover{background:rgba(53,198,224,0.12);}
+  .btn-probe{padding:8px 14px;background:transparent;border:1px solid var(--line);color:var(--muted);font:600 11px 'IBM Plex Mono',monospace;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;}
+  .btn-probe:hover{border-color:var(--signal);color:var(--main);}
+  .btn-probe.active{background:rgba(53,198,224,0.14);border-color:var(--signal);color:var(--signal);}
+  .btn-mpr{padding:8px 14px;background:transparent;border:1px solid var(--line);color:var(--warning);font:600 11px 'IBM Plex Mono',monospace;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;}
+  .btn-mpr:hover{background:rgba(224,165,46,0.12);}
+  .btn-mpr.active{background:rgba(224,165,46,0.18);border-color:var(--warning);color:var(--warning);}
+
+  /* MPR 3-Pane Layout */
+  .mpr-grid{display:none;grid-template-columns:repeat(3, 1fr);gap:14px;margin-top:16px;}
+  @media (max-width:1100px){.mpr-grid{grid-template-columns:1fr;}}
+  .mpr-box{background:#0c0e12;border:1px solid var(--line);padding:10px;display:flex;flex-direction:column;}
+  .mpr-box.hide-plane{display:none !important;}
+  .mpr-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font:600 10.5px 'IBM Plex Mono',monospace;}
+  .mpr-head .tag{color:var(--signal);letter-spacing:0.12em;text-transform:uppercase;}
+  .mpr-head .coord{color:var(--muted);font-size:10px;}
+  .mpr-frame{position:relative;width:100%;height:580px;background:#000;border:1px solid var(--line2);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:crosshair;}
+  .mpr-frame.view-size-compact{height:400px;}
+  .mpr-frame.view-size-medium{height:540px;}
+  .mpr-frame.view-size-large{height:760px;}
+  .mpr-frame img{width:100%;height:100%;object-fit:contain;display:none;margin:auto;}
+  .mpr-crosshair-v{position:absolute;top:0;bottom:0;width:1px;background:rgba(53,198,224,0.7);pointer-events:none;display:none;}
+  .mpr-crosshair-h{position:absolute;left:0;right:0;height:1px;background:rgba(53,198,224,0.7);pointer-events:none;display:none;}
+
+  .mpr-selector-group{display:none;align-items:center;gap:8px;background:#0c0e12;border:1px solid var(--line);padding:4px 10px;margin-left:6px;}
+  .mpr-check-label{display:inline-flex;align-items:center;gap:4px;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--muted);cursor:pointer;user-select:none;text-transform:uppercase;}
+  .mpr-check-label input{accent-color:var(--warning);}
+  .mpr-check-label:hover{color:var(--main);}
+  .auto-wl-label{display:flex;align-items:center;gap:6px;font:500 11px 'IBM Plex Mono',monospace;color:var(--muted);cursor:pointer;user-select:none;}
+  .auto-wl-label input{accent-color:var(--signal);}
+  .viewer-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px;}
+  .viewer-stat-box{background:#0c0e12;border:1px solid var(--line2);padding:8px 10px;}
+  .viewer-stat-k{font:500 9px 'IBM Plex Mono',monospace;color:var(--faint);text-transform:uppercase;}
+  .viewer-stat-v{font:600 12px 'IBM Plex Mono',monospace;color:var(--main);margin-top:2px;}
+
+  /* Batch queue */
+  .queue-list{display:flex;flex-direction:column;gap:6px;margin-bottom:4px;max-height:180px;overflow-y:auto;}
+  .queue-item{display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid var(--line);background:#0c0e12;cursor:pointer;}
+  .queue-item.active{border-color:var(--signal);background:rgba(53,198,224,0.06);}
+  .queue-dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--faint);}
+  .queue-label{flex:1;font:500 11.5px 'IBM Plex Mono',monospace;color:var(--main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .queue-remove{flex:none;color:var(--faint);font:400 14px 'IBM Plex Mono',monospace;line-height:1;padding:0 2px;}
+  .queue-remove:hover{color:var(--danger);}
+
+  .field-label{font:500 10px 'IBM Plex Mono',monospace;letter-spacing:0.14em;color:var(--faint);text-transform:uppercase;margin-bottom:6px;}
+  .upload-box{position:relative;border:1px solid var(--line);background:#0c0e12;padding:10px;transition:border-color .15s ease, background .15s ease;cursor:pointer;margin-bottom:12px;}
+  .upload-box.dragover{border-color:var(--signal);background:rgba(53,198,224,0.06);}
+  .upload-row{display:flex;align-items:center;gap:10px;}
+  .upload-icon{width:34px;height:34px;flex:none;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#0c0e12;}
+  .upload-icon .dot{background:var(--faint);box-shadow:none;}
+  .upload-icon.ok .dot{background:var(--success);box-shadow:0 0 6px var(--success);}
+  .upload-text{min-width:0;flex:1;}
+  .upload-name{font:500 12px 'IBM Plex Mono',monospace;color:var(--main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .upload-hint{font:400 10px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:2px;}
+  .browse-row{display:flex;gap:8px;}
+  .btn-mono{flex:1;padding:8px;background:transparent;border:1px solid var(--line);color:var(--muted);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;}
+  .btn-mono:hover{border-color:var(--signal);color:var(--main);}
+  input[type=file]{display:none;}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:9px 2px;cursor:pointer;}
+  .toggle-row:hover{background:rgba(255,255,255,0.02);}
+  .toggle-row .label{font:400 12px 'IBM Plex Sans',sans-serif;color:var(--main);}
+  .toggle-row .label .sub{font-family:'IBM Plex Mono',monospace;color:var(--faint);font-size:11px;}
+  .toggle{width:38px;height:20px;border:1px solid var(--line);background:#0c0e12;position:relative;flex:none;}
+  .toggle-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;background:#565b63;transition:left .16s ease, background .16s ease;}
+  .toggle.on .toggle-knob{left:20px;background:var(--signal);box-shadow:0 0 8px rgba(53,198,224,0.6);}
+  .divider2{height:1px;background:var(--line2);}
+
+  select.field-select{width:100%;padding:9px 30px 9px 11px;background:#0c0e12;border:1px solid var(--line);color:var(--main);font:400 12px 'IBM Plex Mono',monospace;outline:none;cursor:pointer;}
+  .select-wrap{position:relative;margin-bottom:14px;}
+  .select-wrap:last-child{margin-bottom:0;}
+  .select-caret{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--faint);pointer-events:none;font-size:10px;}
+
+  .btn-primary{width:100%;padding:13px;background:var(--signal);border:none;color:#04121a;font:600 11px 'IBM Plex Mono',monospace;letter-spacing:0.18em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;}
+  .btn-primary:hover:not(:disabled){background:#5fd6ea;}
+  .btn-primary:disabled{opacity:0.4;cursor:not-allowed;}
+
+  .btn-ghost{padding:10px;background:transparent;border:1px solid var(--line);color:var(--text);font:600 10px 'IBM Plex Mono',monospace;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;}
+  .btn-ghost:hover:not(:disabled){border-color:var(--signal);color:var(--signal);}
+  .btn-ghost:disabled{opacity:0.35;cursor:not-allowed;}
+
+  main.workspace{display:flex;flex-direction:column;gap:22px;min-width:0;}
+  .banner{display:none;align-items:center;gap:12px;padding:12px 16px;font:400 12px 'IBM Plex Mono',monospace;}
+  .banner.show{display:flex;}
+  .banner-dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .banner-success{border:1px solid rgba(53,208,138,0.3);background:rgba(53,208,138,0.05);color:var(--success);}
+  .banner-success .banner-dot{background:var(--success);box-shadow:0 0 7px var(--success);}
+  .banner-warning{border:1px solid rgba(224,165,46,0.3);background:rgba(224,165,46,0.05);color:var(--warning);}
+  .banner-warning .banner-dot{background:var(--warning);box-shadow:0 0 7px var(--warning);}
+  .banner-danger{border:1px solid rgba(240,96,77,0.3);background:rgba(240,96,77,0.05);color:var(--danger);}
+  .banner-danger .banner-dot{background:var(--danger);box-shadow:0 0 7px var(--danger);}
+
+  .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (max-width:640px){.meta-grid{grid-template-columns:1fr;}}
+  .meta-box{background:var(--panel);border:1px solid var(--line);padding:16px;}
+  .meta-box-title{font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px;}
+  .meta-box-title.a{color:var(--signal);}
+  .meta-box-title.b{color:var(--warning);}
+  .meta-row{display:flex;justify-content:space-between;font:400 11.5px 'IBM Plex Mono',monospace;padding:4px 0;}
+  .meta-row .k{color:var(--faint);}
+  .meta-row .v{color:var(--main);}
+
+  .slider-card{display:none;background:var(--panel);border:1px solid var(--line);padding:16px 18px;}
+  .slider-card.show{display:block;}
+  .slider-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .slider-head .label{font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:0.14em;color:var(--muted);text-transform:uppercase;}
+  .slider-head .value{font:500 12px 'IBM Plex Mono',monospace;color:var(--signal);}
+  .slider-bounds{display:flex;justify-content:space-between;font:400 9.5px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:2px;}
+  .slice-ruler{display:none;gap:2px;margin-top:10px;height:14px;}
+  .slice-ruler.show{display:flex;}
+  .ruler-tick{flex:1;cursor:pointer;background:#22262d;}
+  .ruler-tick:hover{outline:1px solid var(--signal);}
+  .ruler-tick.current{outline:2px solid var(--main);}
+  .ruler-hint{font:400 9px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:6px;}
+
+  .visual-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;transition:all .2s ease;}
+  @media (max-width:900px){.visual-row{grid-template-columns:1fr;}}
+  .visual-row.size-large{grid-template-columns:repeat(3,1fr);gap:18px;}
+  .visual-row.size-large .visual-frame{aspect-ratio:1;min-height:420px;}
+  .visual-row.size-focus{grid-template-columns:1fr 1fr;gap:18px;}
+  .visual-row.size-focus .visual-frame{aspect-ratio:1;min-height:500px;}
+
+  .size-selector{display:inline-flex;gap:4px;border:1px solid var(--line);padding:2px;background:#0c0e12;margin-left:auto;}
+  .size-btn{padding:3px 8px;background:transparent;border:none;color:var(--muted);font:600 9px 'IBM Plex Mono',monospace;letter-spacing:0.08em;cursor:pointer;text-transform:uppercase;}
+  .size-btn:hover{color:var(--main);}
+  .size-btn.active{background:rgba(53,198,224,0.16);color:var(--signal);border:1px solid rgba(53,198,224,0.4);}
+
+  .visual-box{background:var(--panel);border:1px solid var(--line);padding:14px;}
+  .visual-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;}
+  .visual-head .label{font:500 10px 'IBM Plex Mono',monospace;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;}
+  .visual-head .label.signal{color:var(--signal);}
+  .visual-head .tag{font:400 9px 'IBM Plex Mono',monospace;color:var(--faint);}
+  .visual-head-right{display:flex;align-items:center;gap:8px;}
+  .dl-link{font:400 9px 'IBM Plex Mono',monospace;color:var(--faint);border:1px solid var(--line);padding:2px 6px;cursor:pointer;pointer-events:none;opacity:0.4;}
+  .dl-link.ready{color:var(--signal);border-color:rgba(53,198,224,0.3);pointer-events:auto;opacity:1;}
+  .dl-link.ready:hover{background:rgba(53,198,224,0.08);}
+  .visual-frame{position:relative;aspect-ratio:1;background:#000;border:1px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .visual-frame img{width:100%;height:100%;object-fit:contain;display:none;}
+
+  /* ROI drawing overlay */
+  .visual-frame.roi-draw{cursor:crosshair;}
+  .roi-rect{position:absolute;border:1.5px dashed var(--signal);background:rgba(53,198,224,0.10);pointer-events:none;display:none;}
+  .roi-rect.show{display:block;}
+  .roi-badge{position:absolute;top:6px;left:6px;padding:2px 6px;background:rgba(53,198,224,0.85);color:#04121a;font:600 9px 'IBM Plex Mono',monospace;letter-spacing:0.1em;pointer-events:none;display:none;}
+  .roi-badge.show{display:block;}
+  .visual-placeholder{color:var(--faint);font:400 11px 'IBM Plex Mono',monospace;text-align:center;padding:0 10px;}
+
+  .metrics-grid{display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:14px;align-items:start;}
+  @media (max-width:1024px){.metrics-grid{grid-template-columns:1fr;}}
+  .table-head-row{display:grid;gap:8px;font:500 9px 'IBM Plex Mono',monospace;letter-spacing:0.12em;color:var(--faint);text-transform:uppercase;padding-bottom:9px;border-bottom:1px solid var(--line);}
+  .slice-head{grid-template-columns:64px 1fr auto;}
+  .vol-head{grid-template-columns:1fr auto auto;}
+  .metric-row{display:grid;grid-template-columns:64px 1fr auto;gap:8px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line2);}
+  .metric-name{font:600 11px 'IBM Plex Mono',monospace;color:var(--main);}
+  .metric-bar-track{height:4px;background:#0c0e12;border:1px solid var(--line2);position:relative;overflow:hidden;}
+  .metric-bar-fill{height:100%;}
+  .metric-value{font:600 12.5px 'IBM Plex Mono',monospace;text-align:right;}
+  .metrics-footnote{font:400 9.5px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:12px;line-height:1.6;}
+  .vol-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:10px 0;border-bottom:1px solid var(--line2);}
+  .vol-name{font:600 11px 'IBM Plex Mono',monospace;color:var(--main);}
+  .vol-avg{font:400 11.5px 'IBM Plex Mono',monospace;color:var(--muted);text-align:right;}
+  .vol-val{font:600 11.5px 'IBM Plex Mono',monospace;color:var(--main);text-align:right;min-width:78px;}
+  .sec-head-between{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .btn-compute{padding:7px 12px;background:transparent;border:1px solid var(--line);color:var(--muted);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+  .btn-compute:hover{border-color:var(--signal);color:var(--main);}
+  .btn-compute.done{background:rgba(53,198,224,0.08);border-color:rgba(53,198,224,0.35);color:var(--signal);}
+  .head-actions{display:flex;align-items:center;gap:8px;}
+
+  .chart-toggles{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+  .metric-chip{display:flex;align-items:center;gap:5px;padding:4px 8px;border:1px solid var(--line);cursor:pointer;font:500 9.5px 'IBM Plex Mono',monospace;letter-spacing:0.04em;color:var(--faint);}
+  .metric-chip .sw{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none;}
+  .metric-chip.on{color:var(--main);border-color:var(--line);}
+  .chart-wrap{position:relative;height:230px;width:100%;margin-top:12px;}
+  .chart-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;}
+  .chart-hint span{font:400 11px 'IBM Plex Mono',monospace;color:var(--faint);line-height:1.7;}
+  .chart-hint .hl{color:var(--muted);}
+
+  .loading-overlay{position:fixed;inset:0;width:100%;height:100%;background:rgba(10,11,13,0.85);z-index:1000;display:none;align-items:center;justify-content:center;flex-direction:column;gap:1rem;}
+  .loading-overlay.show{display:flex;}
+  .spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,0.15);border-top-color:var(--signal);border-radius:50%;animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-title{font:500 12px 'IBM Plex Mono',monospace;letter-spacing:0.08em;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div class="bggrid"></div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-title" id="loadingText">PROCESSING VOLUME DATASETS...</div>
+</div>
+
+<div class="container">
+  <header>
+    <div class="logo">
+      <div class="logo-mark"></div>
+      <div class="logo-text">
+        <span class="logo-title">METRIC&nbsp;STUDIO</span>
+        <span class="logo-sub">Image · Volume Similarity Analyzer</span>
+      </div>
+    </div>
+    <div class="chips">
+      <div class="mode-tabs">
+        <button class="mode-tab active" id="tabCompare">Compare</button>
+        <button class="mode-tab" id="tabViewer">Viewer</button>
+      </div>
+      <span class="chip" id="sessionChip">NO SESSION</span>
+      <span class="chip chip-ready" id="statusChip"><span class="dot"></span><span id="statusChipText">IDLE</span></span>
+      <span class="chip">v1.2</span>
+    </div>
+  </header>
+  <div class="hr"></div>
+
+  <div class="main-grid">
+    <aside>
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">00</span>
+          <span class="sec-title">Batch Queue</span>
+          <span class="sec-line"></span>
+          <button class="sec-action" id="btnAddPair">+ Add Pair</button>
+        </div>
+        <div class="queue-list" id="queueList"></div>
+        <div class="ruler-hint">Click a pair to switch its active dataset &amp; results.</div>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">01</span>
+          <span class="sec-title">Input Datasets</span>
+          <span class="sec-line"></span>
+        </div>
+
+        <div class="field-label">Reference · A</div>
+        <div class="upload-box" id="uploadBox1">
+          <div class="upload-row">
+            <div class="upload-icon" id="iconA"><span class="dot"></span></div>
+            <div class="upload-text">
+              <div class="upload-name" id="fileName1">No file selected</div>
+              <div class="upload-hint">Drag &amp; drop files or a folder</div>
+            </div>
+          </div>
+        </div>
+        <div class="browse-row" style="margin-bottom:14px;">
+          <button class="btn-mono" id="btnBrowseFiles1">Browse Files</button>
+          <button class="btn-mono" id="btnBrowseFolder1">Browse Folder</button>
+        </div>
+        <input type="file" id="fileInput1" multiple>
+        <input type="file" id="folderInput1" webkitdirectory>
+
+        <div class="field-label">Test · B</div>
+        <div class="upload-box" id="uploadBox2">
+          <div class="upload-row">
+            <div class="upload-icon" id="iconB"><span class="dot"></span></div>
+            <div class="upload-text">
+              <div class="upload-name" id="fileName2">No file selected</div>
+              <div class="upload-hint">Drag &amp; drop files or a folder</div>
+            </div>
+          </div>
+        </div>
+        <div class="browse-row">
+          <button class="btn-mono" id="btnBrowseFiles2">Browse Files</button>
+          <button class="btn-mono" id="btnBrowseFolder2">Browse Folder</button>
+        </div>
+        <input type="file" id="fileInput2" multiple>
+        <input type="file" id="folderInput2" webkitdirectory>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">02</span>
+          <span class="sec-title">Preprocessing</span>
+          <span class="sec-line"></span>
+        </div>
+
+        <div class="toggle-row" id="rowNormalize">
+          <span class="label">Normalize intensities <span class="sub">[0,1]</span></span>
+          <div class="toggle" id="toggleNormalize"><div class="toggle-knob"></div></div>
+        </div>
+        <div class="divider2"></div>
+        <div class="toggle-row" id="rowResample">
+          <span class="label">Resample B <span class="sub">&rarr; A</span></span>
+          <div class="toggle" id="toggleResample"><div class="toggle-knob"></div></div>
+        </div>
+        <div class="divider2"></div>
+        <div class="toggle-row" id="rowBrain">
+          <span class="label">Restrict to brain mask</span>
+          <div class="toggle" id="toggleBrain"><div class="toggle-knob"></div></div>
+        </div>
+        <div class="divider2"></div>
+        <div class="toggle-row" id="rowRegister">
+          <span class="label">Register B &rarr; A <span class="sub">align</span></span>
+          <div class="toggle" id="toggleRegister"><div class="toggle-knob"></div></div>
+        </div>
+        <div class="divider2"></div>
+        <div class="toggle-row" id="rowRoi">
+          <span class="label">Region of interest <span class="sub">drag on A</span></span>
+          <div class="toggle" id="toggleRoi"><div class="toggle-knob"></div></div>
+        </div>
+        <div id="roiControls" style="display:none; margin-top:10px;">
+          <div class="slider-bounds"><span id="roiReadout">Drag a box on Reference · A</span></div>
+          <button class="btn-ghost" id="btnClearRoi" style="margin-top:8px; width:100%;">Clear region</button>
+        </div>
+        <div class="select-wrap" id="registerTypeWrap" style="margin-top:10px; display:none;">
+          <select class="field-select" id="selectRegisterType">
+            <option value="rigid" selected>Rigid&nbsp;&nbsp;(rotation + translation)</option>
+            <option value="affine">Affine&nbsp;&nbsp;(+ scale / shear)</option>
+          </select>
+          <span class="select-caret">&#9660;</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">03</span>
+          <span class="sec-title">Error Map</span>
+          <span class="sec-line"></span>
+        </div>
+
+        <div class="field-label">Difference Mode</div>
+        <div class="select-wrap">
+          <select class="field-select" id="selectDiffMode">
+            <option value="absolute">Absolute&nbsp;&nbsp;|A &minus; B|</option>
+            <option value="signed" selected>Signed&nbsp;&nbsp;(A &minus; B)</option>
+          </select>
+          <span class="select-caret">&#9660;</span>
+        </div>
+
+        <div class="field-label">Colormap</div>
+        <div class="select-wrap">
+          <select class="field-select" id="selectDiffCmap">
+            <option value="gray">Grayscale · absolute</option>
+            <option value="blue_black_red" selected>Blue&ndash;Black&ndash;Red</option>
+            <option value="seismic">Seismic · diverging</option>
+            <option value="inferno">Inferno · absolute</option>
+            <option value="jet">Jet · rainbow</option>
+          </select>
+          <span class="select-caret">&#9660;</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">04</span>
+          <span class="sec-title">Window / Level</span>
+          <span class="sec-line"></span>
+        </div>
+
+        <div class="toggle-row" id="rowManualWindow">
+          <span class="label">Manual window <span class="sub">override DICOM</span></span>
+          <div class="toggle" id="toggleManualWindow"><div class="toggle-knob"></div></div>
+        </div>
+
+        <div id="windowControls" style="display:none; margin-top:12px;">
+          <div class="slider-head">
+            <span class="label">Level &middot; WL</span>
+            <span class="value" id="wlValue">-</span>
+          </div>
+          <input type="range" id="wlSlider" min="0" max="4095" value="512" step="1">
+
+          <div class="slider-head" style="margin-top:10px;">
+            <span class="label">Width &middot; WW</span>
+            <span class="value" id="wwValue">-</span>
+          </div>
+          <input type="range" id="wwSlider" min="1" max="8190" value="1024" step="1">
+
+          <button class="btn-ghost" id="btnResetWindow" style="margin-top:12px; width:100%;">Reset to DICOM</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">05</span>
+          <span class="sec-title">Export</span>
+          <span class="sec-line"></span>
+        </div>
+
+        <button class="btn-ghost" id="btnSaveCombined" style="width:100%;" disabled>Save Combined PNG</button>
+        <button class="btn-ghost" id="btnSaveAllSlices" style="width:100%; margin-top:8px;" disabled>Save All Slices&hellip;</button>
+        <div class="slider-bounds" style="margin-top:8px;">
+          <span id="exportHint">Reference · Test · Error in one figure</span>
+        </div>
+      </section>
+
+      <button class="btn-primary" id="btnCompare" disabled>
+        <span id="btnCompareLabel">Load Datasets</span>
+      </button>
+    </aside>
+
+    <main class="workspace">
+      <div class="banner banner-success" id="successBanner"><span class="banner-dot"></span><span id="successText"></span></div>
+      <div class="banner banner-warning" id="warningBanner"><span class="banner-dot"></span><span id="warningText"></span></div>
+      <div class="banner banner-danger" id="errorBanner"><span class="banner-dot"></span><span id="errorText"></span></div>
+
+      <div class="meta-grid" id="metaContainer" style="display:none;">
+        <div class="meta-box">
+          <div class="meta-box-title a">Reference · A</div>
+          <div class="meta-row"><span class="k">FORMAT</span><span class="v" id="metaAFormat">-</span></div>
+          <div class="meta-row"><span class="k">SHAPE</span><span class="v" id="metaAShape">-</span></div>
+          <div class="meta-row"><span class="k">DTYPE</span><span class="v" id="metaADtype">-</span></div>
+          <div class="meta-row"><span class="k">RANGE</span><span class="v" id="metaARange">-</span></div>
+          <div class="meta-row" id="metaASequenceRow" style="display:none;"><span class="k">SEQUENCE</span><span class="v" id="metaASequence">-</span></div>
+        </div>
+        <div class="meta-box">
+          <div class="meta-box-title b">Test · B</div>
+          <div class="meta-row"><span class="k">FORMAT</span><span class="v" id="metaBFormat">-</span></div>
+          <div class="meta-row"><span class="k">SHAPE</span><span class="v" id="metaBShape">-</span></div>
+          <div class="meta-row"><span class="k">DTYPE</span><span class="v" id="metaBDtype">-</span></div>
+          <div class="meta-row"><span class="k">RANGE</span><span class="v" id="metaBRange">-</span></div>
+          <div class="meta-row" id="metaBSequenceRow" style="display:none;"><span class="k">SEQUENCE</span><span class="v" id="metaBSequence">-</span></div>
+        </div>
+      </div>
+
+      <div class="slider-card" id="sliderCard">
+        <div class="slider-head">
+          <span class="label">Volume Slice</span>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="size-selector">
+              <button class="size-btn active" id="btnSizeNormal" type="button">Default</button>
+              <button class="size-btn" id="btnSizeLarge" type="button">Large 1.5x</button>
+              <button class="size-btn" id="btnSizeFocus" type="button">A | B Only</button>
+            </div>
+            <span class="value" id="sliceCounter">SLICE 00 / 00</span>
+          </div>
+        </div>
+        <input type="range" id="sliceSlider" min="0" max="0" value="0">
+        <div class="slider-bounds"><span>00</span><span id="sliceMaxLabel">00</span></div>
+        <div class="slice-ruler" id="sliceRuler"></div>
+        <div class="ruler-hint">&larr;/&rarr; keys step slices · ruler colors = per-slice SSIM (after Compute All Slices)</div>
+      </div>
+
+      <div class="visual-row">
+        <div class="visual-box">
+          <div class="visual-head">
+            <span class="label">Reference · A</span>
+            <div class="visual-head-right"><span class="tag">GRAY</span><a class="dl-link" id="dlA" download="reference_a.png">&darr; PNG</a></div>
+          </div>
+          <div class="visual-frame" id="frameA">
+            <img id="imgPreviewA">
+            <div class="roi-rect" id="roiRectA"></div>
+            <div class="roi-badge" id="roiBadgeA">ROI</div>
+            <div class="visual-placeholder" id="placeholderA">Upload reference data</div>
+          </div>
+        </div>
+        <div class="visual-box">
+          <div class="visual-head">
+            <span class="label">Test · B</span>
+            <div class="visual-head-right"><span class="tag">GRAY</span><a class="dl-link" id="dlB" download="test_b.png">&darr; PNG</a></div>
+          </div>
+          <div class="visual-frame" id="frameB">
+            <img id="imgPreviewB">
+            <div class="roi-rect" id="roiRectB"></div>
+            <div class="visual-placeholder" id="placeholderB">Upload test data</div>
+          </div>
+        </div>
+        <div class="visual-box">
+          <div class="visual-head">
+            <span class="label signal">&Delta; Error Map</span>
+            <div class="visual-head-right"><span class="tag" id="cmapLabel">B&ndash;K&ndash;R</span><a class="dl-link" id="dlDiff" download="diff_map.png">&darr; PNG</a></div>
+          </div>
+          <div class="visual-frame" id="frameDiff">
+            <img id="imgDiffMap">
+            <div class="roi-rect" id="roiRectDiff"></div>
+            <div class="visual-placeholder" id="placeholderDiff">Diff map generated after comparison</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <section class="panel">
+          <div class="sec-head-between">
+            <div class="sec-head" style="margin-bottom:0;">
+              <span class="sec-num">04</span>
+              <span class="sec-title">Slice Metrics</span>
+            </div>
+            <button class="sec-action" id="btnExportSlice">Export CSV</button>
+          </div>
+          <div class="table-head-row slice-head">
+            <span>Metric</span><span>Quality</span><span style="text-align:right;">Score</span>
+          </div>
+          <div id="sliceMetricsBody">
+            <div class="metrics-footnote">Run comparison to calculate metrics</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="sec-head-between">
+            <div class="sec-head" style="margin-bottom:0;">
+              <span class="sec-num">05</span>
+              <span class="sec-title">3D Volume Analysis</span>
+            </div>
+            <div class="head-actions">
+              <button class="sec-action" id="btnExportVolume">Export CSV</button>
+              <button class="btn-compute" id="btnRunVolume">Compute All Slices</button>
+            </div>
+          </div>
+          <div class="table-head-row vol-head">
+            <span>Metric</span><span style="text-align:right;">Per-Slice Avg</span><span style="text-align:right;min-width:78px;">Whole-Vol</span>
+          </div>
+          <div id="volumeMetricsBody">
+            <div class="metrics-footnote">Compute whole volume metrics to summarize</div>
+          </div>
+          <div class="chart-toggles" id="chartToggles"></div>
+          <div class="chart-wrap">
+            <canvas id="volumeChart"></canvas>
+            <div class="chart-hint" id="chartHint">
+              <span>Run <span class="hl">Compute All Slices</span><br>to plot per-slice similarity</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- VIEWER TAB INTERFACE -->
+  <div class="viewer-grid" id="viewerContainer">
+    <aside>
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">01</span>
+          <span class="sec-title">Single Volume Input</span>
+          <span class="sec-line"></span>
+        </div>
+        <div class="field-label">Dataset / Series</div>
+        <div class="upload-box" id="viewUploadBox">
+          <div class="upload-row">
+            <div class="upload-icon" id="viewIcon"><span class="dot"></span></div>
+            <div class="upload-text">
+              <div class="upload-name" id="viewFileName">No file selected</div>
+              <div class="upload-hint">NIfTI, DICOM series, NPY, PNG</div>
+            </div>
+          </div>
+        </div>
+        <div class="browse-row" style="margin-bottom:14px;">
+          <button class="btn-mono" id="btnViewBrowseFiles">Browse Files</button>
+          <button class="btn-mono" id="btnViewBrowseFolder">Browse Folder</button>
+        </div>
+        <input type="file" id="viewFileInput" multiple>
+        <input type="file" id="viewFolderInput" webkitdirectory>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head">
+          <span class="sec-num">02</span>
+          <span class="sec-title">Window &amp; Level</span>
+          <span class="sec-line"></span>
+        </div>
+        <div class="slider-head">
+          <span class="label">Level &middot; WL</span>
+          <span class="value" id="viewWlValue">-</span>
+        </div>
+        <input type="range" id="viewWlSlider" min="0" max="4095" value="512" step="1">
+
+        <div class="slider-head" style="margin-top:10px;">
+          <span class="label">Width &middot; WW</span>
+          <span class="value" id="viewWwValue">-</span>
+        </div>
+        <input type="range" id="viewWwSlider" min="1" max="8190" value="1024" step="1">
+
+        <div class="viewer-controls-row">
+          <button class="btn-ghost" id="btnViewResetWindow" style="flex:1;">Reset Window</button>
+          <label class="auto-wl-label">
+            <input type="checkbox" id="viewAutoWl" checked> Auto per slice
+          </label>
+        </div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <div class="viewer-frame-wrap">
+        <div class="slider-head">
+          <span class="label">Volume Slice Navigation</span>
+          <span class="value" id="viewSliceCounter">SLICE 00 / 00</span>
+        </div>
+        <input type="range" id="viewSliceSlider" min="0" max="0" value="0">
+        <div class="slider-bounds"><span>01</span><span id="viewSliceMaxLabel">00</span></div>
+
+        <div class="viewer-controls-row">
+          <button class="btn-cine" id="btnViewPlay" disabled>&#9654; Play Cine</button>
+          <button class="btn-probe" id="btnViewProbe">&#8982; Cursor Probe</button>
+          <button class="btn-mpr" id="btnViewMpr">&#9638; Orthogonal MPR</button>
+
+          <!-- MPR Plane Checkboxes -->
+          <div class="mpr-selector-group" id="mprSelectorGroup">
+            <span style="font:600 9px 'IBM Plex Mono',monospace;color:var(--faint);margin-right:2px;">PLANES:</span>
+            <label class="mpr-check-label">
+              <input type="checkbox" id="chkMprAxial" checked> Axial (Z)
+            </label>
+            <label class="mpr-check-label">
+              <input type="checkbox" id="chkMprCoronal" checked> Coronal (Y)
+            </label>
+            <label class="mpr-check-label">
+              <input type="checkbox" id="chkMprSagittal" checked> Sagittal (X)
+            </label>
+          </div>
+
+          <!-- Viewer Frame Size Selector -->
+          <div class="size-selector" id="viewSizeSelector" style="margin-left:auto;">
+            <button class="size-btn" id="btnViewSizeCompact" type="button">Small (400px)</button>
+            <button class="size-btn active" id="btnViewSizeMedium" type="button">Normal (520px)</button>
+            <button class="size-btn" id="btnViewSizeLarge" type="button">Fit</button>
+          </div>
+
+          <span class="ruler-hint">&larr;/&rarr; keys step slices &middot; click on slice to position crosshair</span>
+        </div>
+
+        <div class="viewer-frame" id="viewFrame" style="margin-top:14px;">
+          <div class="viewer-probe-hud" id="viewProbeHud">X: - Y: - VAL: -</div>
+          <div class="mpr-crosshair-v" id="viewCrosshairV"></div>
+          <div class="mpr-crosshair-h" id="viewCrosshairH"></div>
+          <img id="imgViewPreview">
+          <div class="visual-placeholder" id="viewPlaceholder">Upload a single volume or DICOM series to inspect</div>
+        </div>
+
+        <!-- Orthogonal 3-Plane MPR Grid -->
+        <div class="mpr-grid" id="mprGrid">
+          <div class="mpr-box" id="boxMprAxial">
+            <div class="mpr-head">
+              <span class="tag">Axial (Z)</span>
+              <span class="coord" id="mprCoordZ">Z: 0</span>
+            </div>
+            <div class="mpr-frame" id="mprFrameAxial">
+              <div class="mpr-crosshair-v" id="mprCrosshairAxialV"></div>
+              <div class="mpr-crosshair-h" id="mprCrosshairAxialH"></div>
+              <img id="imgMprAxial">
+            </div>
+          </div>
+          <div class="mpr-box" id="boxMprCoronal">
+            <div class="mpr-head">
+              <span class="tag">Coronal (Y)</span>
+              <span class="coord" id="mprCoordY">Y: 0</span>
+            </div>
+            <div class="mpr-frame" id="mprFrameCoronal">
+              <div class="mpr-crosshair-v" id="mprCrosshairCoronalV"></div>
+              <div class="mpr-crosshair-h" id="mprCrosshairCoronalH"></div>
+              <img id="imgMprCoronal">
+            </div>
+          </div>
+          <div class="mpr-box" id="boxMprSagittal">
+            <div class="mpr-head">
+              <span class="tag">Sagittal (X)</span>
+              <span class="coord" id="mprCoordX">X: 0</span>
+            </div>
+            <div class="mpr-frame" id="mprFrameSagittal">
+              <div class="mpr-crosshair-v" id="mprCrosshairSagittalV"></div>
+              <div class="mpr-crosshair-h" id="mprCrosshairSagittalH"></div>
+              <img id="imgMprSagittal">
+            </div>
+          </div>
+        </div>
+
+        <div class="viewer-stats">
+          <div class="viewer-stat-box"><div class="viewer-stat-k">KIND</div><div class="viewer-stat-v" id="statKind">-</div></div>
+          <div class="viewer-stat-box"><div class="viewer-stat-k">SHAPE</div><div class="viewer-stat-v" id="statShape">-</div></div>
+          <div class="viewer-stat-box"><div class="viewer-stat-k">INTENSITY</div><div class="viewer-stat-v" id="statIntensity" style="color:var(--signal);">-</div></div>
+          <div class="viewer-stat-box"><div class="viewer-stat-k">DATA MIN</div><div class="viewer-stat-v" id="statMin">-</div></div>
+          <div class="viewer-stat-box"><div class="viewer-stat-k">DATA MAX</div><div class="viewer-stat-v" id="statMax">-</div></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  const fileInput1 = document.getElementById('fileInput1');
+  const folderInput1 = document.getElementById('folderInput1');
+  const fileInput2 = document.getElementById('fileInput2');
+  const folderInput2 = document.getElementById('folderInput2');
+  const btnBrowseFiles1 = document.getElementById('btnBrowseFiles1');
+  const btnBrowseFolder1 = document.getElementById('btnBrowseFolder1');
+  const btnBrowseFiles2 = document.getElementById('btnBrowseFiles2');
+  const btnBrowseFolder2 = document.getElementById('btnBrowseFolder2');
+
+  const uploadBox1 = document.getElementById('uploadBox1');
+  const uploadBox2 = document.getElementById('uploadBox2');
+  const fileName1 = document.getElementById('fileName1');
+  const fileName2 = document.getElementById('fileName2');
+  const iconA = document.getElementById('iconA');
+  const iconB = document.getElementById('iconB');
+  const btnCompare = document.getElementById('btnCompare');
+  const btnCompareLabel = document.getElementById('btnCompareLabel');
+  const btnRunVolume = document.getElementById('btnRunVolume');
+  const btnAddPair = document.getElementById('btnAddPair');
+  const queueList = document.getElementById('queueList');
+
+  const successBanner = document.getElementById('successBanner');
+  const successText = document.getElementById('successText');
+  const warningBanner = document.getElementById('warningBanner');
+  const warningText = document.getElementById('warningText');
+  const errorBanner = document.getElementById('errorBanner');
+  const errorText = document.getElementById('errorText');
+
+  const toggleNormalize = document.getElementById('toggleNormalize');
+  const toggleResample = document.getElementById('toggleResample');
+  const toggleBrain = document.getElementById('toggleBrain');
+  const rowNormalize = document.getElementById('rowNormalize');
+  const rowResample = document.getElementById('rowResample');
+  const rowBrain = document.getElementById('rowBrain');
+  const toggleRegister = document.getElementById('toggleRegister');
+  const rowRegister = document.getElementById('rowRegister');
+  const registerTypeWrap = document.getElementById('registerTypeWrap');
+  const selectRegisterType = document.getElementById('selectRegisterType');
+
+  const toggleRoi = document.getElementById('toggleRoi');
+  const rowRoi = document.getElementById('rowRoi');
+  const roiControls = document.getElementById('roiControls');
+  const roiReadout = document.getElementById('roiReadout');
+  const btnClearRoi = document.getElementById('btnClearRoi');
+  const frameA = document.getElementById('frameA');
+  const roiRectA = document.getElementById('roiRectA');
+  const roiRectB = document.getElementById('roiRectB');
+  const roiRectDiff = document.getElementById('roiRectDiff');
+  const roiBadgeA = document.getElementById('roiBadgeA');
+
+  const toggleManualWindow = document.getElementById('toggleManualWindow');
+  const rowManualWindow = document.getElementById('rowManualWindow');
+  const windowControls = document.getElementById('windowControls');
+  const wlSlider = document.getElementById('wlSlider');
+  const wwSlider = document.getElementById('wwSlider');
+  const wlValue = document.getElementById('wlValue');
+  const wwValue = document.getElementById('wwValue');
+  const btnResetWindow = document.getElementById('btnResetWindow');
+
+  const btnSaveCombined = document.getElementById('btnSaveCombined');
+  const btnSaveAllSlices = document.getElementById('btnSaveAllSlices');
+  const exportHint = document.getElementById('exportHint');
+
+  const btnSizeNormal = document.getElementById('btnSizeNormal');
+  const btnSizeLarge = document.getElementById('btnSizeLarge');
+  const btnSizeFocus = document.getElementById('btnSizeFocus');
+  const visualRow = document.querySelector('.visual-row');
+  const pageContainer = document.querySelector('.container');
+  const frameDiff = document.getElementById('frameDiff');
+  const boxDiff = frameDiff ? frameDiff.closest('.visual-box') : null;
+
+  const selectDiffMode = document.getElementById('selectDiffMode');
+  const selectDiffCmap = document.getElementById('selectDiffCmap');
+  const cmapLabel = document.getElementById('cmapLabel');
+
+  const metaContainer = document.getElementById('metaContainer');
+  const sliderCard = document.getElementById('sliderCard');
+  const sliceSlider = document.getElementById('sliceSlider');
+  const sliceCounter = document.getElementById('sliceCounter');
+  const sliceMaxLabel = document.getElementById('sliceMaxLabel');
+  const sliceRuler = document.getElementById('sliceRuler');
+
+  const imgPreviewA = document.getElementById('imgPreviewA');
+  const imgPreviewB = document.getElementById('imgPreviewB');
+  const imgDiffMap = document.getElementById('imgDiffMap');
+  const placeholderA = document.getElementById('placeholderA');
+  const placeholderB = document.getElementById('placeholderB');
+  const placeholderDiff = document.getElementById('placeholderDiff');
+  const dlA = document.getElementById('dlA');
+  const dlB = document.getElementById('dlB');
+  const dlDiff = document.getElementById('dlDiff');
+
+  const sliceMetricsBody = document.getElementById('sliceMetricsBody');
+  const volumeMetricsBody = document.getElementById('volumeMetricsBody');
+  const chartToggles = document.getElementById('chartToggles');
+  const chartHint = document.getElementById('chartHint');
+  const btnExportSlice = document.getElementById('btnExportSlice');
+  const btnExportVolume = document.getElementById('btnExportVolume');
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  const loadingText = document.getElementById('loadingText');
+  const sessionChip = document.getElementById('sessionChip');
+  const statusChip = document.getElementById('statusChip');
+  const statusChipText = document.getElementById('statusChipText');
+
+  const CMAP_LABELS = { gray: 'GRAY', blue_black_red: 'B–K–R', seismic: 'SEISMIC', inferno: 'INFERNO', jet: 'JET' };
+  const ALL_METRICS = ['PSNR', 'SSIM', 'MS-SSIM', 'MSE', 'RMSE', 'MAE', 'NRMSE', 'NCC', 'MI', 'NMI', 'HFEN', 'GMSD', 'Dice', 'Jaccard (IoU)', 'HD95', 'FFT Error'];
+  const METRIC_COLORS = { PSNR: '#e0a52e', SSIM: '#35c6e0', 'MS-SSIM': '#5fd6ea', MSE: '#f0604d', RMSE: '#fb923c', MAE: '#f472b6', NRMSE: '#facc15', NCC: '#35d08a', MI: '#a78bfa', NMI: '#60a5fa', HFEN: '#34d399', GMSD: '#c084fc', Dice: '#ec4899', 'Jaccard (IoU)': '#f43f5e', HD95: '#e11d48', 'FFT Error': '#8b5cf6' };
+  const BOUNDED_01 = new Set(['SSIM', 'MS-SSIM', 'NCC', 'NMI', 'Dice', 'Jaccard (IoU)']);
+  const HIGHER_BETTER = new Set(['SSIM', 'MS-SSIM', 'NCC', 'MI', 'NMI', 'Dice', 'Jaccard (IoU)']);
+
+  let volumeChartInstance = null;
+  let currentSessionId = null;
+  let activeRequestController = null;
+  let volumeRequestController = null;
+  let sliceReqSeq = 0;
+  let volumeReqSeq = 0;
+  let activeChartMetrics = new Set(['SSIM', 'NCC', 'PSNR']);
+  let lastSliceMetrics = null;
+  let lastVolumeAvg = null;
+  let lastVolumeWhole = null;
+  let lastVolumeSliceMetrics = null;
+
+  // ---------- Batch queue ----------
+  let jobs = [];
+  let activeJobId = null;
+  let jobCounter = 0;
+
+  function createJob() {
+    jobCounter++;
+    const job = { id: jobCounter, label: 'Pair ' + jobCounter, files1: [], files2: [], sessionId: null };
+    jobs.push(job);
+    return job;
+  }
+  function getActiveJob() { return jobs.find(j => j.id === activeJobId); }
+
+  function renderQueue() {
+    queueList.innerHTML = '';
+    jobs.forEach(job => {
+      const row = document.createElement('div');
+      row.className = 'queue-item' + (job.id === activeJobId ? ' active' : '');
+      const dotColor = job.sessionId ? 'var(--success)' : (job.files1.length && job.files2.length) ? 'var(--warning)' : 'var(--faint)';
+      row.innerHTML = `<span class="queue-dot" style="background:${dotColor};"></span><span class="queue-label">${job.label}</span><span class="queue-remove" title="Remove">&times;</span>`;
+      row.addEventListener('click', (e) => { if (e.target.classList.contains('queue-remove')) return; selectJob(job.id); });
+      row.querySelector('.queue-remove').addEventListener('click', (e) => { e.stopPropagation(); removeJob(job.id); });
+      queueList.appendChild(row);
+    });
+  }
+
+  function clearWorkspace() {
+    // Kill any in-flight slice/volume requests so stale responses can't repaint
+    // the just-cleared workspace for the new job.
+    if (activeRequestController) activeRequestController.abort();
+    if (volumeRequestController) volumeRequestController.abort();
+    activeRequestController = null;
+    volumeRequestController = null;
+    successBanner.classList.remove('show');
+    warningBanner.classList.remove('show');
+    errorBanner.classList.remove('show');
+    metaContainer.style.display = 'none';
+    sliderCard.classList.remove('show');
+    sliceRuler.classList.remove('show');
+    imgPreviewA.style.display = 'none'; placeholderA.style.display = 'block';
+    imgPreviewB.style.display = 'none'; placeholderB.style.display = 'block';
+    imgDiffMap.style.display = 'none'; placeholderDiff.style.display = 'block';
+    [dlA, dlB, dlDiff].forEach(a => { a.classList.remove('ready'); a.href = '#'; });
+    sliceMetricsBody.innerHTML = '<div class="metrics-footnote">Run comparison to calculate metrics</div>';
+    volumeMetricsBody.innerHTML = '<div class="metrics-footnote">Compute whole volume metrics to summarize</div>';
+    lastSliceMetrics = null; lastVolumeAvg = null; lastVolumeWhole = null; lastVolumeSliceMetrics = null;
+    if (volumeChartInstance) { volumeChartInstance.destroy(); volumeChartInstance = null; }
+    chartHint.style.display = 'flex';
+    btnRunVolume.textContent = 'Compute All Slices';
+    btnRunVolume.classList.remove('done');
+    btnRunVolume.disabled = false;
+    loadingOverlay.classList.remove('show');
+    btnCompareLabel.textContent = 'Load Datasets';
+    sessionChip.textContent = 'NO SESSION';
+    btnSaveCombined.disabled = true;
+    btnSaveAllSlices.disabled = true;
+    setExportHint('Reference · Test · Error in one figure');
+    windowInitialized = false;   // next dataset re-seeds WL/WW from its own DICOM
+    pendingWindowReset = false;
+    roi = null; roiDragStart = null;
+    [roiRectA, roiRectB, roiRectDiff].forEach(el => el.classList.remove('show'));
+    roiBadgeA.classList.remove('show');
+    setStatus('IDLE');
+  }
+
+  function selectJob(id) {
+    activeJobId = id;
+    const job = getActiveJob();
+    currentSessionId = job.sessionId;
+    updateFileLabel(job.files1, fileName1, iconA);
+    updateFileLabel(job.files2, fileName2, iconB);
+    checkInputs();
+    renderQueue();
+    clearWorkspace();
+    if (currentSessionId) {
+      sessionChip.textContent = `SESSION ${currentSessionId.slice(0, 8).toUpperCase()}`;
+      runSliceComparison(0);
+    }
+  }
+
+  function addJob() {
+    const job = createJob();
+    selectJob(job.id);
+  }
+
+  function removeJob(id) {
+    const idx = jobs.findIndex(j => j.id === id);
+    if (idx === -1) return;
+    jobs.splice(idx, 1);
+    if (jobs.length === 0) {
+      createJobAndSelectFirst();
+      return;
+    }
+    if (activeJobId === id) {
+      const next = jobs[Math.max(0, idx - 1)];
+      selectJob(next.id);
+    } else {
+      renderQueue();
+    }
+  }
+
+  function createJobAndSelectFirst() {
+    const job = createJob();
+    selectJob(job.id);
+  }
+
+  btnAddPair.addEventListener('click', addJob);
+
+  function setStatus(text, kind) {
+    statusChipText.textContent = text;
+    const color = kind === 'error' ? 'var(--danger)' : kind === 'busy' ? 'var(--warning)' : 'var(--success)';
+    const border = kind === 'error' ? 'rgba(240,96,77,0.35)' : kind === 'busy' ? 'rgba(224,165,46,0.35)' : 'rgba(53,208,138,0.35)';
+    statusChipText.style.color = color;
+    statusChip.style.borderColor = border;
+    statusChip.querySelector('.dot').style.background = color;
+    statusChip.querySelector('.dot').style.boxShadow = '0 0 6px ' + color;
+  }
+
+  function setSession(id, targetJob = getActiveJob()) {
+    currentSessionId = (targetJob && targetJob.id === activeJobId) ? id : currentSessionId;
+    if (targetJob) targetJob.sessionId = id;
+    renderQueue();
+  }
+
+  function resetSession() {
+    setSession(null);
+    successBanner.classList.remove('show');
+    btnCompareLabel.textContent = 'Load Datasets';
+    sessionChip.textContent = 'NO SESSION';
+    setStatus('IDLE');
+  }
+
+  function updateFileLabel(filesList, labelEl, iconEl) {
+    if (filesList.length === 1) labelEl.textContent = filesList[0].name;
+    else if (filesList.length > 1) labelEl.textContent = `${filesList.length} files selected`;
+    else labelEl.textContent = 'No file selected';
+    iconEl.classList.toggle('ok', filesList.length > 0);
+  }
+
+  async function getFilesFromEntries(items) {
+    const files = [];
+    async function traverse(item) {
+      if (item.isFile) {
+        const file = await new Promise((resolve) => item.file(resolve));
+        file.relativePath = item.fullPath;
+        files.push(file);
+      } else if (item.isDirectory) {
+        const reader = item.createReader();
+        let entries = [];
+        let readChunk = async () => {
+          let result = await new Promise((resolve) => { reader.readEntries(resolve); });
+          if (result.length > 0) { entries = entries.concat(result); await readChunk(); }
+        };
+        await readChunk();
+        for (const entry of entries) { await traverse(entry); }
+      }
+    }
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i].webkitGetAsEntry();
+      if (item) { await traverse(item); }
+    }
+    return files;
+  }
+
+  [uploadBox1, uploadBox2].forEach((box, idx) => {
+    box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('dragover'); });
+    box.addEventListener('dragleave', () => { box.classList.remove('dragover'); });
+    box.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      box.classList.remove('dragover');
+      // The folder drop below awaits async traversal, so capture the target job
+      // up front; the user may switch pairs while it's still walking the tree.
+      const dropJob = getActiveJob();
+      resetSession();
+      clearWorkspace();
+      if (!dropJob) return;
+      let files = [];
+      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+        files = await getFilesFromEntries(e.dataTransfer.items);
+      } else {
+        files = Array.from(e.dataTransfer.files);
+      }
+      if (files.length > 0 && dropJob.id === activeJobId) {
+        if (idx === 0) { dropJob.files1 = files; updateFileLabel(dropJob.files1, fileName1, iconA); }
+        else { dropJob.files2 = files; updateFileLabel(dropJob.files2, fileName2, iconB); }
+        renderQueue();
+        checkInputs();
+      }
+    });
+  });
+
+  btnBrowseFiles1.addEventListener('click', (e) => { e.stopPropagation(); fileInput1.click(); });
+  btnBrowseFolder1.addEventListener('click', (e) => { e.stopPropagation(); folderInput1.click(); });
+  btnBrowseFiles2.addEventListener('click', (e) => { e.stopPropagation(); fileInput2.click(); });
+  btnBrowseFolder2.addEventListener('click', (e) => { e.stopPropagation(); folderInput2.click(); });
+
+  [fileInput1, folderInput1].forEach(input => {
+    input.addEventListener('change', () => {
+      resetSession();
+      clearWorkspace();
+      if (input.files.length) {
+        const job = getActiveJob();
+        job.files1 = Array.from(input.files);
+        updateFileLabel(job.files1, fileName1, iconA);
+        renderQueue();
+        checkInputs();
+      }
+    });
+  });
+  [fileInput2, folderInput2].forEach(input => {
+    input.addEventListener('change', () => {
+      resetSession();
+      clearWorkspace();
+      if (input.files.length) {
+        const job = getActiveJob();
+        job.files2 = Array.from(input.files);
+        updateFileLabel(job.files2, fileName2, iconB);
+        renderQueue();
+        checkInputs();
+      }
+    });
+  });
+
+  function checkInputs() {
+    const job = getActiveJob();
+    if (job && job.files1.length && job.files2.length) btnCompare.removeAttribute('disabled');
+    else btnCompare.setAttribute('disabled', 'true');
+  }
+
+  function wireToggle(toggleEl, rowEl, onChange) {
+    let state = false;
+    rowEl.addEventListener('click', () => {
+      state = !state;
+      toggleEl.classList.toggle('on', state);
+      onChange(state);
+    });
+    return () => state;
+  }
+  const getNormalize = wireToggle(toggleNormalize, rowNormalize, () => onTuningChange());
+  const getResample = wireToggle(toggleResample, rowResample, () => onTuningChange());
+  const getBrain = wireToggle(toggleBrain, rowBrain, () => onTuningChange());
+  const getRegister = wireToggle(toggleRegister, rowRegister, (state) => {
+    registerTypeWrap.style.display = state ? 'block' : 'none';
+    onTuningChange();
+  });
+  selectRegisterType.addEventListener('change', () => onTuningChange());
+
+  // ---- Region of interest ---------------------------------------------------
+  // roi holds the rectangle as FRACTIONS of the image (0..1), not pixels, so it
+  // survives the browser scaling the preview and maps cleanly onto the array
+  // server-side. One ROI applies to every slice.
+  let roi = null;              // {x, y, w, h} in image fractions
+  let roiDragStart = null;     // {x, y} in image fractions
+
+  const getRoiEnabled = wireToggle(toggleRoi, rowRoi, (state) => {
+    roiControls.style.display = state ? 'block' : 'none';
+    frameA.classList.toggle('roi-draw', state);
+    if (!state && roi) { roi = null; renderRoiOverlays(); onTuningChange(); }
+    else { renderRoiOverlays(); }
+  });
+
+  // The preview <img> uses object-fit:contain, so the bitmap is letterboxed
+  // inside the square frame. Mouse coords must be mapped against the RENDERED
+  // image box, not the frame, or the ROI lands in the wrong place on any
+  // non-square image.
+  function renderedImageBox(img) {
+    const cw = img.clientWidth, ch = img.clientHeight;
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (!nw || !nh) return { left: 0, top: 0, width: cw, height: ch };
+    const scale = Math.min(cw / nw, ch / nh);
+    const width = nw * scale, height = nh * scale;
+    return { left: (cw - width) / 2, top: (ch - height) / 2, width, height };
+  }
+
+  function eventToImageFraction(e) {
+    const img = imgPreviewA;
+    const rect = img.getBoundingClientRect();
+    const box = renderedImageBox(img);
+    const x = (e.clientX - rect.left - box.left) / box.width;
+    const y = (e.clientY - rect.top - box.top) / box.height;
+    return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+  }
+
+  // Paint the same rectangle onto all three panels, positioned against each
+  // panel's own rendered image box.
+  function renderRoiOverlays() {
+    const panels = [[roiRectA, imgPreviewA], [roiRectB, imgPreviewB], [roiRectDiff, imgDiffMap]];
+    if (!roi) {
+      panels.forEach(([el]) => el.classList.remove('show'));
+      roiBadgeA.classList.remove('show');
+      roiReadout.textContent = getRoiEnabled() ? 'Drag a box on Reference · A' : '';
+      return;
+    }
+    panels.forEach(([el, img]) => {
+      if (!img || img.style.display === 'none' || !img.naturalWidth) { el.classList.remove('show'); return; }
+      const box = renderedImageBox(img);
+      el.style.left = (box.left + roi.x * box.width) + 'px';
+      el.style.top = (box.top + roi.y * box.height) + 'px';
+      el.style.width = (roi.w * box.width) + 'px';
+      el.style.height = (roi.h * box.height) + 'px';
+      el.classList.add('show');
+    });
+    roiBadgeA.classList.add('show');
+  }
+
+  frameA.addEventListener('mousedown', (e) => {
+    if (!getRoiEnabled() || imgPreviewA.style.display === 'none') return;
+    e.preventDefault();
+    roiDragStart = eventToImageFraction(e);
+    roi = { x: roiDragStart.x, y: roiDragStart.y, w: 0, h: 0 };
+    renderRoiOverlays();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!roiDragStart) return;
+    const p = eventToImageFraction(e);
+    roi = {
+      x: Math.min(roiDragStart.x, p.x),
+      y: Math.min(roiDragStart.y, p.y),
+      w: Math.abs(p.x - roiDragStart.x),
+      h: Math.abs(p.y - roiDragStart.y)
+    };
+    renderRoiOverlays();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!roiDragStart) return;
+    roiDragStart = null;
+    // Ignore a stray click: too small a box would measure almost nothing.
+    if (!roi || roi.w < 0.01 || roi.h < 0.01) {
+      roi = null;
+      renderRoiOverlays();
+      return;
+    }
+    const w = imgPreviewA.naturalWidth, h = imgPreviewA.naturalHeight;
+    roiReadout.textContent =
+      `${Math.round(roi.w * w)} × ${Math.round(roi.h * h)} px at (${Math.round(roi.x * w)}, ${Math.round(roi.y * h)})`;
+    onTuningChange();
+  });
+
+  btnClearRoi.addEventListener('click', () => {
+    if (!roi) return;
+    roi = null;
+    renderRoiOverlays();
+    onTuningChange();
+  });
+
+  window.addEventListener('resize', renderRoiOverlays);
+
+  function appendRoiParams(formData) {
+    if (roi && roi.w > 0 && roi.h > 0) {
+      formData.append('roi_x', roi.x);
+      formData.append('roi_y', roi.y);
+      formData.append('roi_w', roi.w);
+      formData.append('roi_h', roi.h);
+    }
+  }
+
+  // ---- Window / Level -------------------------------------------------------
+  // windowInitialized tracks whether the sliders have been seeded from the
+  // DICOM's own WL/WW yet; until then a manual toggle has nothing sane to show.
+  let windowInitialized = false;
+  let pendingWindowReset = false;
+  const getManualWindow = wireToggle(toggleManualWindow, rowManualWindow, (state) => {
+    windowControls.style.display = state ? 'block' : 'none';
+    onTuningChange();
+  });
+
+  function updateWindowLabels() {
+    wlValue.textContent = wlSlider.value;
+    wwValue.textContent = wwSlider.value;
+  }
+
+  // Seed slider ranges/values from the server's reported window for this slice.
+  // Only re-seeds while in auto mode, so dragging isn't fought by each response.
+  function syncWindowFromResponse(win) {
+    if (!win) return;
+    const dataMin = win.data_min, dataMax = win.data_max;
+    const span = Math.max(dataMax - dataMin, 1);
+    wlSlider.min = Math.floor(dataMin - span * 0.25);
+    wlSlider.max = Math.ceil(dataMax + span * 0.25);
+    wwSlider.min = 1;
+    wwSlider.max = Math.ceil(span * 2);
+
+    if (!getManualWindow() || !windowInitialized) {
+      if (win.center !== null && win.center !== undefined) {
+        wlSlider.value = Math.round(win.center);
+      } else {
+        wlSlider.value = Math.round(dataMin + span / 2);
+      }
+      if (win.width !== null && win.width !== undefined) {
+        wwSlider.value = Math.round(win.width);
+      } else {
+        wwSlider.value = Math.round(span);
+      }
+      windowInitialized = true;
+    }
+    updateWindowLabels();
+  }
+
+  let windowDebounce = null;
+  [wlSlider, wwSlider].forEach(sl => {
+    sl.addEventListener('input', () => {
+      updateWindowLabels();
+      clearTimeout(windowDebounce);
+      windowDebounce = setTimeout(() => onTuningChange(), 120);
+    });
+  });
+
+  btnResetWindow.addEventListener('click', () => {
+    // Ask for the DICOM's own window back: skip sending the manual values on the
+    // next request (otherwise the server just echoes them) and let the response
+    // re-seed the sliders, while staying in manual mode for further tweaking.
+    pendingWindowReset = true;
+    windowInitialized = false;
+    onTuningChange();
+  });
+
+  // Appends WL/WW to a request only when the user has taken manual control.
+  function appendWindowParams(formData) {
+    if (pendingWindowReset) {
+      pendingWindowReset = false;
+      return;
+    }
+    if (getManualWindow()) {
+      formData.append('window_center', wlSlider.value);
+      formData.append('window_width', wwSlider.value);
+    }
+  }
+
+  function onTuningChange() {
+    const job = getActiveJob();
+    if (currentSessionId || (job && job.files1.length && job.files2.length)) {
+      runSliceComparison(parseInt(sliceSlider.value || 0));
+    }
+  }
+  [selectDiffMode, selectDiffCmap].forEach(el => el.addEventListener('change', () => {
+    cmapLabel.textContent = CMAP_LABELS[selectDiffCmap.value] || selectDiffCmap.value.toUpperCase();
+    onTuningChange();
+  }));
+
+  btnCompare.addEventListener('click', () => runSliceComparison(0));
+
+  async function runSliceComparison(sliceIdx = 0) {
+    const job = getActiveJob();
+    if (!currentSessionId && (!job || !job.files1.length || !job.files2.length)) return;
+
+    errorBanner.classList.remove('show');
+    warningBanner.classList.remove('show');
+    if (!currentSessionId) successBanner.classList.remove('show');
+    setStatus('COMPUTING', 'busy');
+
+    if (activeRequestController) activeRequestController.abort();
+    activeRequestController = new AbortController();
+    const { signal } = activeRequestController;
+    // Identity of this request: which job it belongs to + which request is newest.
+    const reqJob = job;
+    const reqSeq = ++sliceReqSeq;
+
+    const formData = new FormData();
+    if (currentSessionId) {
+      formData.append('session_id', currentSessionId);
+    } else {
+      for (const file of reqJob.files1) formData.append('file1', file, file.relativePath || file.webkitRelativePath || file.name);
+      for (const file of reqJob.files2) formData.append('file2', file, file.relativePath || file.webkitRelativePath || file.name);
+    }
+    formData.append('slice_idx', sliceIdx);
+    formData.append('normalize', getNormalize());
+    formData.append('resample', getResample());
+    formData.append('brain_only', getBrain());
+    formData.append('register', getRegister());
+    formData.append('register_type', selectRegisterType.value);
+    formData.append('diff_mode', selectDiffMode.value);
+    formData.append('diff_cmap', selectDiffCmap.value);
+    appendWindowParams(formData);
+    appendRoiParams(formData);
+
+    // A job that was removed or a request superseded by a newer one must never
+    // touch the DOM — guard every post-await step with this check.
+    const isStale = () => (reqSeq !== sliceReqSeq) || (!jobs.includes(reqJob)) || (reqJob.id !== activeJobId);
+
+    try {
+      const response = await fetch('/api/compare', { method: 'POST', body: formData, signal });
+      const data = await response.json();
+      if (isStale()) return;
+
+      if (!response.ok) {
+        if (data.error && data.error.toLowerCase().includes('expired')) {
+          setSession(null, reqJob);
+          throw new Error(data.error + ' — please re-select files and click Load Datasets again.');
+        }
+        throw new Error(data.error || 'Server returned an error');
+      }
+
+      const isInitialUpload = !currentSessionId;
+      setSession(data.session_id, reqJob);
+      if (isStale()) return;
+      sessionChip.textContent = `SESSION ${currentSessionId.slice(0, 8).toUpperCase()}`;
+      setStatus('READY');
+
+      if (isInitialUpload) {
+        successText.textContent = `Datasets loaded & verified — ${data.is_3d ? `3D volume · ${data.max_slices} slices detected` : '2D image detected'} · shapes match`;
+        successBanner.classList.add('show');
+        btnCompareLabel.textContent = 'Reload Datasets';
+      }
+
+      metaContainer.style.display = 'grid';
+      populateMetadata(data.meta_a, data.meta_b);
+
+      if (data.warnings && data.warnings.length > 0) {
+        warningText.textContent = data.warnings.join(' | ');
+        warningBanner.classList.add('show');
+      }
+
+      imgPreviewA.src = data.preview_a; imgPreviewA.style.display = 'block'; placeholderA.style.display = 'none';
+      imgPreviewB.src = data.preview_b; imgPreviewB.style.display = 'block'; placeholderB.style.display = 'none';
+      imgDiffMap.src = data.diff_map; imgDiffMap.style.display = 'block'; placeholderDiff.style.display = 'none';
+      dlA.href = data.preview_a; dlA.classList.add('ready');
+      dlB.href = data.preview_b; dlB.classList.add('ready');
+      dlDiff.href = data.diff_map; dlDiff.classList.add('ready');
+      cmapLabel.textContent = CMAP_LABELS[selectDiffCmap.value] || selectDiffCmap.value.toUpperCase();
+
+      syncWindowFromResponse(data.window);
+      btnSaveCombined.disabled = false;
+      btnSaveAllSlices.disabled = !data.is_3d;
+
+      // Redraw the ROI boxes once the freshly-swapped images report their size;
+      // naturalWidth is 0 until the new src has decoded.
+      if (imgPreviewA.complete) renderRoiOverlays();
+      else imgPreviewA.addEventListener('load', renderRoiOverlays, { once: true });
+
+      // Make it visible how much of the frame the metrics actually covered.
+      if (data.measured) {
+        const m = data.measured;
+        if (m.roi_active || m.brain_only) {
+          const pct = (100 * m.pixels / m.total_pixels).toFixed(1);
+          const scope = [m.roi_active ? 'ROI' : null, m.brain_only ? 'brain mask' : null]
+            .filter(Boolean).join(' ∩ ');
+          roiReadout.textContent = `Measuring ${m.pixels.toLocaleString()} px (${pct}% of frame) · ${scope}`;
+        }
+      }
+
+      hd95Unit = data.hd95_unit || 'px';
+      lastSliceMetrics = reviveMetrics(data.metrics);
+      populateMetricsTable(lastSliceMetrics);
+
+      if (data.is_3d) {
+        sliderCard.classList.add('show');
+        sliceSlider.max = data.max_slices - 1;
+        sliceSlider.value = data.current_slice;
+        sliceCounter.textContent = `SLICE ${String(data.current_slice + 1).padStart(2, '0')} / ${data.max_slices}`;
+        sliceMaxLabel.textContent = String(data.max_slices).padStart(2, '0');
+        highlightRulerTick(data.current_slice);
+      } else {
+        sliderCard.classList.remove('show');
+      }
+    } catch (err) {
+      // A superseded/removed job's failure must not repaint a newer state.
+      if (isStale()) return;
+      if (err.name !== 'AbortError') {
+        errorText.textContent = err.message;
+        errorBanner.classList.add('show');
+        setStatus('ERROR', 'error');
+      }
+    }
+  }
+
+  sliceSlider.addEventListener('input', (e) => {
+    const idx = parseInt(e.target.value);
+    sliceCounter.textContent = `SLICE ${String(idx + 1).padStart(2, '0')} / ${parseInt(sliceSlider.max) + 1}`;
+    highlightRulerTick(idx);
+    runSliceComparison(idx);
+  });
+
+  // ---------- Keyboard nav ----------
+  document.addEventListener('keydown', (e) => {
+    if (!sliderCard.classList.contains('show')) return;
+    const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+    if (tag === 'select' || tag === 'input' || tag === 'textarea') return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const max = parseInt(sliceSlider.max);
+    let idx = parseInt(sliceSlider.value);
+    idx = e.key === 'ArrowRight' ? Math.min(max, idx + 1) : Math.max(0, idx - 1);
+    sliceSlider.value = idx;
+    sliceCounter.textContent = `SLICE ${String(idx + 1).padStart(2, '0')} / ${max + 1}`;
+    highlightRulerTick(idx);
+    runSliceComparison(idx);
+  });
+
+  function highlightRulerTick(idx) {
+    sliceRuler.querySelectorAll('.ruler-tick').forEach((t, i) => t.classList.toggle('current', i === idx));
+  }
+
+  function buildRuler(sliceMetricsList) {
+    sliceRuler.innerHTML = '';
+    sliceMetricsList.forEach((s) => {
+      const tick = document.createElement('div');
+      tick.className = 'ruler-tick';
+      const ssim = s.metrics['SSIM'];
+      tick.style.background = qualityColor('SSIM', ssim);
+      tick.title = `Slice ${s.slice} · SSIM ${ssim === null ? 'N/A' : ssim.toFixed(3)}`;
+      tick.addEventListener('click', () => {
+        sliceSlider.value = s.slice;
+        sliceCounter.textContent = `SLICE ${String(s.slice + 1).padStart(2, '0')} / ${parseInt(sliceSlider.max) + 1}`;
+        highlightRulerTick(s.slice);
+        runSliceComparison(s.slice);
+      });
+      sliceRuler.appendChild(tick);
+    });
+    sliceRuler.classList.add('show');
+    highlightRulerTick(parseInt(sliceSlider.value));
+  }
+
+  btnRunVolume.addEventListener('click', async () => {
+    const job = getActiveJob();
+    if (!currentSessionId && (!job || !job.files1.length || !job.files2.length)) return;
+
+    // A Compute All Slices run is a single long-running request: disable the
+    // button, cancel any previous run, and tag this one with the job it owns.
+    btnRunVolume.disabled = true;
+    btnRunVolume.textContent = 'Computing…';
+    if (volumeRequestController) volumeRequestController.abort();
+    volumeRequestController = new AbortController();
+    const { signal } = volumeRequestController;
+    const reqJob = job;
+    const reqSeq = ++volumeReqSeq;
+    const isStale = () => (reqSeq !== volumeReqSeq) || (!jobs.includes(reqJob)) || (reqJob.id !== activeJobId);
+
+    loadingOverlay.classList.add('show');
+    loadingText.textContent = 'PROCESSING FULL 3D VOLUMES, PLEASE WAIT...';
+
+    const formData = new FormData();
+    if (currentSessionId) {
+      formData.append('session_id', currentSessionId);
+    } else {
+      for (const file of reqJob.files1) formData.append('file1', file, file.relativePath || file.webkitRelativePath || file.name);
+      for (const file of reqJob.files2) formData.append('file2', file, file.relativePath || file.webkitRelativePath || file.name);
+    }
+    formData.append('normalize', getNormalize());
+    formData.append('resample', getResample());
+    formData.append('brain_only', getBrain());
+    formData.append('register', getRegister());
+    formData.append('register_type', selectRegisterType.value);
+    appendRoiParams(formData);
+
+    try {
+      const response = await fetch('/api/compare_volume', { method: 'POST', body: formData, signal });
+      const data = await response.json();
+      if (isStale()) return;
+
+      if (!response.ok) {
+        if (data.error && data.error.toLowerCase().includes('expired')) {
+          setSession(null, reqJob);
+          throw new Error(data.error + ' — please re-select files and click Load Datasets again.');
+        }
+        throw new Error(data.error || 'Server failed volume processing');
+      }
+
+      setSession(data.session_id, reqJob);
+      if (isStale()) return;
+      sessionChip.textContent = `SESSION ${currentSessionId.slice(0, 8).toUpperCase()}`;
+
+      hd95Unit = data.hd95_unit || 'px';
+      lastVolumeAvg = reviveMetrics(data.average_metrics);
+      lastVolumeWhole = reviveMetrics(data.volume_metrics);
+      lastVolumeSliceMetrics = (data.slice_metrics || []).map(
+        s => ({ slice: s.slice, metrics: reviveMetrics(s.metrics) })
+      );
+
+      populateVolumeTable(lastVolumeAvg, lastVolumeWhole);
+      renderChartToggles();
+      drawVolumeChart(lastVolumeSliceMetrics);
+      buildRuler(lastVolumeSliceMetrics);
+      btnRunVolume.textContent = 'Recompute';
+      btnRunVolume.classList.add('done');
+      chartHint.style.display = 'none';
+    } catch (err) {
+      if (isStale()) return;
+      errorText.textContent = err.message;
+      errorBanner.classList.add('show');
+    } finally {
+      if (!isStale()) {
+        loadingOverlay.classList.remove('show');
+        btnRunVolume.disabled = false;
+      }
+    }
+  });
+
+  function setSequenceRow(rowId, valId, sequence) {
+    const row = document.getElementById(rowId);
+    const val = document.getElementById(valId);
+    if (sequence) {
+      val.textContent = sequence;
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  }
+
+  function populateMetadata(a, b) {
+    document.getElementById('metaAFormat').textContent = a.kind.toUpperCase();
+    document.getElementById('metaAShape').textContent = a.shape.join(' × ');
+    document.getElementById('metaADtype').textContent = a.dtype;
+    document.getElementById('metaARange').textContent = `[${a.min.toFixed(2)}, ${a.max.toFixed(2)}]`;
+    setSequenceRow('metaASequenceRow', 'metaASequence', a.sequence);
+
+    document.getElementById('metaBFormat').textContent = b.kind.toUpperCase();
+    document.getElementById('metaBShape').textContent = b.shape.join(' × ');
+    document.getElementById('metaBDtype').textContent = b.dtype;
+    document.getElementById('metaBRange').textContent = `[${b.min.toFixed(2)}, ${b.max.toFixed(2)}]`;
+    setSequenceRow('metaBSequenceRow', 'metaBSequence', b.sequence);
+  }
+
+  function qualityColor(name, val) {
+    if (val === null) return 'var(--muted)';
+    if (val === Infinity) return 'var(--success)';
+    if (name === 'PSNR') return val > 32 ? 'var(--success)' : val > 26 ? 'var(--signal)' : 'var(--warning)';
+    if (HIGHER_BETTER.has(name)) return val > 0.95 ? 'var(--success)' : val > 0.85 ? 'var(--signal)' : 'var(--warning)';
+    return 'var(--muted)';
+  }
+
+  function qualityBar(name, val) {
+    if (val === null) return 3;
+    if (val === Infinity) return 100;
+    if (name === 'PSNR') return Math.max(3, Math.min(100, val / 45 * 100));
+    if (HIGHER_BETTER.has(name)) return Math.max(3, Math.min(100, val * 100));
+    if (name === 'MSE' || name === 'RMSE' || name === 'MAE' || name === 'NRMSE') return Math.max(3, 100 - Math.min(100, val * 900));
+    if (name === 'HFEN' || name === 'GMSD') return Math.max(3, 100 - Math.min(100, val * 260));
+    return 50;
+  }
+
+  let hd95Unit = 'px';
+  const unitSfx = name => name === 'HD95' ? ' ' + hd95Unit : '';
+
+  function fmtVal(name, val) {
+    if (val === null) return 'N/A';
+    if (val === Infinity) return '∞';
+    if (name === 'HD95') return val.toFixed(4) + unitSfx(name);
+    if (name === 'PSNR') return val.toFixed(2) + ' dB';
+    if (name === 'MSE' || name === 'RMSE') return val.toFixed(5);
+    return val.toFixed(4);
+  }
+
+  function populateMetricsTable(metrics) {
+    sliceMetricsBody.innerHTML = '';
+    for (const [name, val] of Object.entries(metrics)) {
+      const color = qualityColor(name, val);
+      const bar = qualityBar(name, val);
+      const row = document.createElement('div');
+      row.className = 'metric-row';
+      row.innerHTML = `
+        <span class="metric-name">${name}</span>
+        <div class="metric-bar-track"><div class="metric-bar-fill" style="width:${bar}%;background:${color};"></div></div>
+        <span class="metric-value" style="color:${color};">${fmtVal(name, val)}</span>
+      `;
+      sliceMetricsBody.appendChild(row);
+    }
+  }
+
+  function populateVolumeTable(avg, vol) {
+    volumeMetricsBody.innerHTML = '';
+    for (const name of Object.keys(vol)) {
+      const rawAvg = avg ? avg[name] : null;
+      const rawVol = vol ? vol[name] : null;
+      const avgVal = (rawAvg === 'inf' || rawAvg === Infinity) ? Infinity : (rawAvg !== null && rawAvg !== undefined) ? Number(rawAvg) : null;
+      const volVal = (rawVol === 'inf' || rawVol === Infinity) ? Infinity : (rawVol !== null && rawVol !== undefined) ? Number(rawVol) : null;
+      const row = document.createElement('div');
+      row.className = 'vol-row';
+      row.innerHTML = `
+        <span class="vol-name">${name}</span>
+        <span class="vol-avg">${(avgVal !== null && !isNaN(avgVal)) ? (avgVal === Infinity ? '∞' : avgVal.toFixed(4) + unitSfx(name)) : 'N/A'}</span>
+        <span class="vol-val">${(volVal !== null && !isNaN(volVal)) ? (volVal === Infinity ? '∞' : volVal.toFixed(4) + unitSfx(name)) : 'N/A'}</span>
+      `;
+      volumeMetricsBody.appendChild(row);
+    }
+  }
+
+  // ---------- CSV export ----------
+  function toCSV(rows) {
+    return rows.map(r => r.map(c => {
+      const s = String(c);
+      return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(',')).join('\n');
+  }
+  // The server encodes non-finite metrics as sentinel strings because JSON has
+  // no literal for them (PSNR is +inf for pixel-identical images). Turn them
+  // back into real numbers so the display/colour logic keeps working.
+  function reviveMetrics(metrics) {
+    if (!metrics) return metrics;
+    const out = {};
+    for (const [k, v] of Object.entries(metrics)) {
+      out[k] = v === 'inf' ? Infinity : v === '-inf' ? -Infinity : v;
+    }
+    return out;
+  }
+
+  function downloadBlob(content, filename, type) {
+    const blob = new Blob([content], { type: type || 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  btnExportSlice.addEventListener('click', () => {
+    if (!lastSliceMetrics) return;
+    const rows = [['metric', 'value']];
+    for (const [name, val] of Object.entries(lastSliceMetrics)) {
+      rows.push([name, val === null ? '' : val === Infinity ? 'inf' : val]);
+    }
+    downloadBlob(toCSV(rows), `slice_${sliceSlider.value || 0}_metrics.csv`);
+  });
+  btnExportVolume.addEventListener('click', () => {
+    if (!lastVolumeSliceMetrics) return;
+    const names = Object.keys(lastVolumeSliceMetrics[0].metrics);
+    const rows = [['slice', ...names]];
+    lastVolumeSliceMetrics.forEach(s => {
+      rows.push([s.slice, ...names.map(n => { const v = s.metrics[n]; return v === null ? '' : v === Infinity ? 'inf' : v; })]);
+    });
+    downloadBlob(toCSV(rows), 'volume_per_slice_metrics.csv');
+  });
+
+  // ---------- Combined figure export ----------
+  // Builds the same request /api/compare gets, so the saved figure matches
+  // exactly what's on screen (same window, registration, diff mode).
+  function buildPlotFormData(sliceIdx) {
+    const job = getActiveJob();
+    const formData = new FormData();
+    if (currentSessionId) {
+      formData.append('session_id', currentSessionId);
+    } else if (job) {
+      for (const file of job.files1) formData.append('file1', file, file.relativePath || file.webkitRelativePath || file.name);
+      for (const file of job.files2) formData.append('file2', file, file.relativePath || file.webkitRelativePath || file.name);
+    }
+    formData.append('slice_idx', sliceIdx);
+    formData.append('normalize', getNormalize());
+    formData.append('resample', getResample());
+    formData.append('brain_only', getBrain());
+    formData.append('register', getRegister());
+    formData.append('register_type', selectRegisterType.value);
+    formData.append('diff_mode', selectDiffMode.value);
+    formData.append('diff_cmap', selectDiffCmap.value);
+    appendWindowParams(formData);
+    appendRoiParams(formData);
+    return formData;
+  }
+
+  async function fetchCombinedPlot(sliceIdx, formData = buildPlotFormData(sliceIdx)) {
+    formData.set('slice_idx', sliceIdx);
+    const response = await fetch('/api/combined_plot', {
+      method: 'POST', body: formData
+    });
+    if (!response.ok) {
+      let msg = 'Failed to render combined plot';
+      try { const j = await response.json(); msg = j.error || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    return await response.blob();
+  }
+
+  function setExportHint(text) { exportHint.textContent = text; }
+
+  btnSaveCombined.addEventListener('click', async () => {
+    const sliceIdx = parseInt(sliceSlider.value || 0);
+    btnSaveCombined.disabled = true;
+    setExportHint('Rendering combined figure…');
+    try {
+      const blob = await fetchCombinedPlot(sliceIdx);
+      const filename = `comparison_slice_${String(sliceIdx).padStart(3, '0')}.png`;
+
+      // File System Access API lets the user pick the destination; browsers
+      // without it (Firefox/Safari) fall back to the normal download folder.
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: 'PNG image', accept: { 'image/png': ['.png'] } }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setExportHint(`Saved ${handle.name}`);
+        } catch (err) {
+          if (err.name === 'AbortError') { setExportHint('Save cancelled'); }
+          else { throw err; }
+        }
+      } else {
+        downloadBlob(blob, filename, 'image/png');
+        setExportHint(`Downloaded ${filename}`);
+      }
+    } catch (err) {
+      setExportHint(`Error: ${err.message}`);
+    } finally {
+      btnSaveCombined.disabled = false;
+    }
+  });
+
+  btnSaveAllSlices.addEventListener('click', async () => {
+    const total = parseInt(sliceSlider.max) + 1;
+    if (!total || total < 1) return;
+    // Freeze the pair and settings before the folder picker or any network wait.
+    const plotParams = buildPlotFormData(0);
+
+    let dirHandle = null;
+    if (window.showDirectoryPicker) {
+      try {
+        dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      } catch (err) {
+        if (err.name === 'AbortError') { setExportHint('Save cancelled'); return; }
+        throw err;
+      }
+    } else {
+      // No directory picker -> fall back to one download per slice.
+      if (!confirm(`Your browser can't pick a folder, so this will download ${total} separate PNG files. Continue?`)) {
+        setExportHint('Save cancelled');
+        return;
+      }
+    }
+
+    btnSaveAllSlices.disabled = true;
+    btnSaveCombined.disabled = true;
+    let saved = 0;
+    try {
+      for (let i = 0; i < total; i++) {
+        setExportHint(`Saving slice ${i + 1} / ${total}…`);
+        const blob = await fetchCombinedPlot(i, plotParams);
+        const filename = `comparison_slice_${String(i).padStart(3, '0')}.png`;
+        if (dirHandle) {
+          const fh = await dirHandle.getFileHandle(filename, { create: true });
+          const writable = await fh.createWritable();
+          await writable.write(blob);
+          await writable.close();
+        } else {
+          downloadBlob(blob, filename, 'image/png');
+        }
+        saved++;
+      }
+      setExportHint(`Saved ${saved} / ${total} slices`);
+    } catch (err) {
+      setExportHint(`Stopped after ${saved} / ${total}: ${err.message}`);
+    } finally {
+      btnSaveAllSlices.disabled = false;
+      btnSaveCombined.disabled = false;
+    }
+  });
+
+  // ---------- Chart metric toggles ----------
+  function renderChartToggles() {
+    chartToggles.innerHTML = '';
+    ALL_METRICS.forEach(name => {
+      const chip = document.createElement('div');
+      chip.className = 'metric-chip' + (activeChartMetrics.has(name) ? ' on' : '');
+      chip.innerHTML = `<span class="sw" style="background:${activeChartMetrics.has(name) ? METRIC_COLORS[name] : 'var(--faint)'};"></span>${name}`;
+      chip.addEventListener('click', () => {
+        if (activeChartMetrics.has(name)) activeChartMetrics.delete(name);
+        else activeChartMetrics.add(name);
+        renderChartToggles();
+        if (lastVolumeSliceMetrics) drawVolumeChart(lastVolumeSliceMetrics);
+      });
+      chartToggles.appendChild(chip);
+    });
+  }
+
+  function drawVolumeChart(sliceMetrics) {
+    const slices = sliceMetrics.map(s => s.slice);
+    const ctx = document.getElementById('volumeChart').getContext('2d');
+    if (volumeChartInstance) volumeChartInstance.destroy();
+
+    const ax = { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#565b63', font: { family: 'IBM Plex Mono', size: 9 } } };
+    const datasets = [];
+    ALL_METRICS.forEach(name => {
+      if (!activeChartMetrics.has(name)) return;
+      datasets.push({
+        label: name,
+        data: sliceMetrics.map(s => s.metrics[name]),
+        borderColor: METRIC_COLORS[name],
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.25,
+        borderDash: BOUNDED_01.has(name) ? [] : [3, 3],
+        yAxisID: BOUNDED_01.has(name) ? 'y' : 'y1'
+      });
+    });
+
+    volumeChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: { labels: slices, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { ...ax, title: { display: true, text: 'SLICE INDEX', color: '#565b63', font: { family: 'IBM Plex Mono', size: 9 } } },
+          y: { ...ax, position: 'left', min: 0, max: 1, title: { display: true, text: 'BOUNDED [0,1]', color: '#565b63', font: { family: 'IBM Plex Mono', size: 9 } } },
+          y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#565b63', font: { family: 'IBM Plex Mono', size: 9 } }, title: { display: true, text: 'UNBOUNDED', color: '#565b63', font: { family: 'IBM Plex Mono', size: 9 } } }
+        },
+        plugins: { legend: { labels: { color: '#868b94', font: { family: 'IBM Plex Mono', size: 10 }, boxWidth: 14, boxHeight: 2 } } },
+        onClick: (e, elements) => {
+          if (elements.length > 0) {
+            const index = elements[0].index;
+            sliceSlider.value = index;
+            sliceCounter.textContent = `SLICE ${String(index + 1).padStart(2, '0')} / ${parseInt(sliceSlider.max) + 1}`;
+            highlightRulerTick(index);
+            runSliceComparison(index);
+          }
+        }
+      }
+    });
+  }
+
+  // ---------- Mode Switching & Single Volume Viewer Logic ----------
+  const tabCompare = document.getElementById('tabCompare');
+  const tabViewer = document.getElementById('tabViewer');
+  const mainCompareGrid = document.querySelector('.main-grid');
+  const viewerContainer = document.getElementById('viewerContainer');
+
+  const viewFileInput = document.getElementById('viewFileInput');
+  const viewFolderInput = document.getElementById('viewFolderInput');
+  const btnViewBrowseFiles = document.getElementById('btnViewBrowseFiles');
+  const btnViewBrowseFolder = document.getElementById('btnViewBrowseFolder');
+  const viewUploadBox = document.getElementById('viewUploadBox');
+  const viewFileName = document.getElementById('viewFileName');
+  const viewIcon = document.getElementById('viewIcon');
+
+  const viewWlSlider = document.getElementById('viewWlSlider');
+  const viewWwSlider = document.getElementById('viewWwSlider');
+  const viewWlValue = document.getElementById('viewWlValue');
+  const viewWwValue = document.getElementById('viewWwValue');
+  const btnViewResetWindow = document.getElementById('btnViewResetWindow');
+  const viewAutoWl = document.getElementById('viewAutoWl');
+
+  const viewSliceSlider = document.getElementById('viewSliceSlider');
+  const viewSliceCounter = document.getElementById('viewSliceCounter');
+  const viewSliceMaxLabel = document.getElementById('viewSliceMaxLabel');
+  const btnViewPlay = document.getElementById('btnViewPlay');
+  const imgViewPreview = document.getElementById('imgViewPreview');
+  const viewPlaceholder = document.getElementById('viewPlaceholder');
+
+  const statKind = document.getElementById('statKind');
+  const statShape = document.getElementById('statShape');
+  const statIntensity = document.getElementById('statIntensity');
+  const statMin = document.getElementById('statMin');
+  const statMax = document.getElementById('statMax');
+
+  const btnViewProbe = document.getElementById('btnViewProbe');
+  const btnViewMpr = document.getElementById('btnViewMpr');
+  const viewProbeHud = document.getElementById('viewProbeHud');
+  const viewFrame = document.getElementById('viewFrame');
+  const viewCrosshairV = document.getElementById('viewCrosshairV');
+  const viewCrosshairH = document.getElementById('viewCrosshairH');
+
+  const btnViewSizeCompact = document.getElementById('btnViewSizeCompact');
+  const btnViewSizeMedium = document.getElementById('btnViewSizeMedium');
+  const btnViewSizeLarge = document.getElementById('btnViewSizeLarge');
+
+  const mprGrid = document.getElementById('mprGrid');
+  const imgMprAxial = document.getElementById('imgMprAxial');
+  const imgMprCoronal = document.getElementById('imgMprCoronal');
+  const imgMprSagittal = document.getElementById('imgMprSagittal');
+  const mprCoordZ = document.getElementById('mprCoordZ');
+  const mprCoordY = document.getElementById('mprCoordY');
+  const mprCoordX = document.getElementById('mprCoordX');
+  const mprCrosshairAxialV = document.getElementById('mprCrosshairAxialV');
+  const mprCrosshairAxialH = document.getElementById('mprCrosshairAxialH');
+  const mprCrosshairCoronalV = document.getElementById('mprCrosshairCoronalV');
+  const mprCrosshairCoronalH = document.getElementById('mprCrosshairCoronalH');
+  const mprCrosshairSagittalV = document.getElementById('mprCrosshairSagittalV');
+  const mprCrosshairSagittalH = document.getElementById('mprCrosshairSagittalH');
+
+  const mprSelectorGroup = document.getElementById('mprSelectorGroup');
+  const chkMprAxial = document.getElementById('chkMprAxial');
+  const chkMprCoronal = document.getElementById('chkMprCoronal');
+  const chkMprSagittal = document.getElementById('chkMprSagittal');
+  const boxMprAxial = document.getElementById('boxMprAxial');
+  const boxMprCoronal = document.getElementById('boxMprCoronal');
+  const boxMprSagittal = document.getElementById('boxMprSagittal');
+
+  let viewSessionId = null;
+  let viewMaxSlices = 1;
+  let viewCurrentSlice = 0;
+  let viewTimer = null;
+  let viewDataMin = 0;
+  let viewDataMax = 2000;
+  let viewProbeActive = false;
+  let viewProbeDebounce = null;
+  let viewMprActive = false;
+  let mprNormX = 0.5;
+  let mprNormY = 0.5;
+  let mprReqSeq = 0;
+
+  function switchMode(mode) {
+    if (mode === 'viewer') {
+      tabCompare.classList.remove('active');
+      tabViewer.classList.add('active');
+      mainCompareGrid.style.display = 'none';
+      viewerContainer.style.display = 'grid';
+    } else {
+      tabViewer.classList.remove('active');
+      tabCompare.classList.add('active');
+      viewerContainer.style.display = 'none';
+      mainCompareGrid.style.display = 'grid';
+    }
+  }
+
+  tabCompare.addEventListener('click', () => switchMode('compare'));
+  tabViewer.addEventListener('click', () => switchMode('viewer'));
+
+  btnViewBrowseFiles.addEventListener('click', (e) => { e.stopPropagation(); viewFileInput.click(); });
+  btnViewBrowseFolder.addEventListener('click', (e) => { e.stopPropagation(); viewFolderInput.click(); });
+  viewUploadBox.addEventListener('click', () => viewFileInput.click());
+
+  viewUploadBox.addEventListener('dragover', (e) => { e.preventDefault(); viewUploadBox.classList.add('dragover'); });
+  viewUploadBox.addEventListener('dragleave', () => { viewUploadBox.classList.remove('dragover'); });
+  viewUploadBox.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    viewUploadBox.classList.remove('dragover');
+    let files = [];
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      files = await getFilesFromEntries(e.dataTransfer.items);
+    } else {
+      files = Array.from(e.dataTransfer.files);
+    }
+    if (files.length > 0) handleViewUpload(files);
+  });
+
+  viewFileInput.addEventListener('change', () => handleViewUpload(viewFileInput.files));
+  viewFolderInput.addEventListener('change', () => handleViewUpload(viewFolderInput.files));
+
+  async function handleViewUpload(fileList) {
+    if (!fileList || !fileList.length) return;
+    setStatus('PROCESSING', 'active');
+    viewFileName.textContent = fileList.length === 1 ? fileList[0].name : `${fileList.length} files`;
+    viewIcon.classList.add('ok');
+
+    const fd = new FormData();
+    for (const f of fileList) fd.append('files', f, f.name || 'file');
+
+    try {
+      const res = await fetch('/api/view_open', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load dataset');
+
+      viewSessionId = data.session_id;
+      viewMaxSlices = data.max_slices;
+      viewCurrentSlice = data.current_slice;
+      viewDataMin = parseFloat(data.data_min) || 0;
+      viewDataMax = parseFloat(data.data_max) || 2000;
+
+      viewSliceSlider.max = Math.max(viewMaxSlices - 1, 0);
+      viewSliceSlider.value = viewCurrentSlice;
+      viewSliceMaxLabel.textContent = String(viewMaxSlices).padStart(2, '0');
+      btnViewPlay.disabled = viewMaxSlices < 2;
+
+      statKind.textContent = data.kind.toUpperCase();
+      statShape.textContent = data.shape.join(' × ');
+      statIntensity.textContent = '-';
+      statMin.textContent = Math.round(viewDataMin);
+      statMax.textContent = Math.round(viewDataMax);
+
+      viewAutoWl.checked = true;
+      setViewWindowSliders(data.window);
+      showViewSlice(data);
+      setStatus('READY');
+    } catch (e) {
+      alert(e.message);
+      setStatus('ERROR', 'danger');
+    }
+  }
+
+  function setViewWindowSliders(win) {
+    if (!win || win.center == null || win.width == null) return;
+    const c = win.center;
+    const w = win.width;
+    viewWlSlider.min = Math.floor(Math.min(viewDataMin, c - w));
+    viewWlSlider.max = Math.ceil(Math.max(viewDataMax, c + w));
+    viewWwSlider.min = 1;
+    viewWwSlider.max = Math.ceil(Math.max(viewDataMax - viewDataMin, w * 2) || 2000);
+    viewWlSlider.value = c;
+    viewWwSlider.value = w;
+    viewWlValue.textContent = Math.round(c);
+    viewWwValue.textContent = Math.round(w);
+  }
+
+  function showViewSlice(data) {
+    imgViewPreview.src = data.preview;
+    imgViewPreview.style.display = 'block';
+    viewPlaceholder.style.display = 'none';
+    viewCurrentSlice = data.current_slice;
+    viewSliceSlider.value = viewCurrentSlice;
+    viewSliceCounter.textContent = `SLICE ${String(viewCurrentSlice + 1).padStart(2, '0')} / ${String(data.max_slices).padStart(2, '0')}`;
+
+    if (data.window && data.window.center != null && data.window.width != null) {
+      setViewWindowSliders(data.window);
+    }
+  }
+
+  let viewSliceInFlight = false;
+  let viewSlicePending = null;
+
+  async function fetchViewSlice(targetIdx) {
+    if (!viewSessionId) return;
+    if (viewMprActive) {
+      if (targetIdx !== undefined) viewCurrentSlice = targetIdx;
+      return fetchMprViews();
+    }
+    if (viewSliceInFlight) {
+      viewSlicePending = { idx: targetIdx };
+      return;
+    }
+    viewSliceInFlight = true;
+    const idx = (targetIdx !== undefined) ? targetIdx : viewCurrentSlice;
+    const fd = new FormData();
+    fd.append('session_id', viewSessionId);
+    fd.append('slice_idx', idx);
+
+    if (!viewAutoWl.checked) {
+      fd.append('window_center', viewWlSlider.value);
+      fd.append('window_width', viewWwSlider.value);
+    }
+
+    try {
+      const res = await fetch('/api/view_slice', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (res.ok && !viewMprActive) showViewSlice(data);
+    } catch (e) {} finally {
+      viewSliceInFlight = false;
+      if (viewSlicePending !== null) {
+        const p = viewSlicePending;
+        viewSlicePending = null;
+        fetchViewSlice(p.idx);
+      }
+    }
+  }
+
+  viewSliceSlider.addEventListener('input', (e) => {
+    viewCurrentSlice = parseInt(e.target.value);
+    fetchViewSlice(viewCurrentSlice);
+  });
+
+  let viewWlDebounce = null;
+  viewWlSlider.addEventListener('input', () => {
+    viewAutoWl.checked = false;
+    viewWlValue.textContent = viewWlSlider.value;
+    clearTimeout(viewWlDebounce);
+    viewWlDebounce = setTimeout(() => fetchViewSlice(), 80);
+  });
+
+  let viewWwDebounce = null;
+  viewWwSlider.addEventListener('input', () => {
+    viewAutoWl.checked = false;
+    viewWwValue.textContent = viewWwSlider.value;
+    clearTimeout(viewWwDebounce);
+    viewWwDebounce = setTimeout(() => fetchViewSlice(), 80);
+  });
+
+  viewAutoWl.addEventListener('change', () => fetchViewSlice());
+
+  btnViewResetWindow.addEventListener('click', () => {
+    if (!viewSessionId) return;
+    viewAutoWl.checked = true;
+    fetchViewSlice();
+  });
+
+  btnViewPlay.addEventListener('click', () => {
+    if (viewTimer) {
+      clearInterval(viewTimer);
+      viewTimer = null;
+      btnViewPlay.innerHTML = '&#9654; Play Cine';
+      return;
+    }
+    btnViewPlay.innerHTML = '&#9632; Stop Cine';
+    viewTimer = setInterval(() => {
+      viewCurrentSlice = (viewCurrentSlice + 1) % viewMaxSlices;
+      fetchViewSlice(viewCurrentSlice);
+    }, 110);
+  });
+
+  // ---------- Cursor Probe Logic ----------
+  btnViewProbe.addEventListener('click', () => {
+    viewProbeActive = !viewProbeActive;
+    btnViewProbe.classList.toggle('active', viewProbeActive);
+    viewFrame.classList.toggle('probe-active', viewProbeActive);
+    viewProbeHud.style.display = viewProbeActive ? 'block' : 'none';
+    if (!viewProbeActive) {
+      statIntensity.textContent = '-';
+    }
+  });
+
+  function eventToViewImageFraction(e) {
+    const rect = imgViewPreview.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    if (clickX < 0 || clickX > rect.width || clickY < 0 || clickY > rect.height) return null;
+    return {
+      fx: Math.max(0, Math.min(1, clickX / rect.width)),
+      fy: Math.max(0, Math.min(1, clickY / rect.height))
+    };
+  }
+
+  viewFrame.addEventListener('mousemove', (e) => {
+    if (!viewProbeActive || !viewSessionId || imgViewPreview.style.display === 'none') return;
+    const frac = eventToViewImageFraction(e);
+    if (!frac) {
+      viewProbeHud.style.display = 'none';
+      return;
+    }
+    viewProbeHud.style.display = 'block';
+
+    clearTimeout(viewProbeDebounce);
+    viewProbeDebounce = setTimeout(async () => {
+      const fd = new FormData();
+      fd.append('session_id', viewSessionId);
+      fd.append('slice_idx', viewCurrentSlice);
+      fd.append('x', frac.fx);
+      fd.append('y', frac.fy);
+
+      try {
+        const res = await fetch('/api/view_pixel', { method: 'POST', body: fd });
+        const d = await res.json();
+        if (res.ok) {
+          const valStr = Number.isInteger(d.value) ? d.value : d.value.toFixed(2);
+          viewProbeHud.textContent = `X: ${d.x}  Y: ${d.y}  VAL: ${valStr}`;
+          statIntensity.textContent = `${valStr} (${d.x}, ${d.y})`;
+        }
+      } catch (err) {}
+    }, 25);
+  });
+
+  viewFrame.addEventListener('mouseleave', () => {
+    if (viewProbeActive) {
+      viewProbeHud.style.display = 'none';
+      statIntensity.textContent = '-';
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!viewSessionId || viewMaxSlices < 2) return;
+    if (viewerContainer.style.display !== 'none') {
+      if (e.key === 'ArrowRight') {
+        viewCurrentSlice = Math.min(viewCurrentSlice + 1, viewMaxSlices - 1);
+        fetchViewSlice(viewCurrentSlice);
+      } else if (e.key === 'ArrowLeft') {
+        viewCurrentSlice = Math.max(viewCurrentSlice - 1, 0);
+        fetchViewSlice(viewCurrentSlice);
+      }
+    }
+  });
+
+  // ---------- Orthogonal MPR Logic ----------
+  function updateMprVisiblePlanes() {
+    const showAx = chkMprAxial.checked;
+    const showCor = chkMprCoronal.checked;
+    const showSag = chkMprSagittal.checked;
+
+    boxMprAxial.classList.toggle('hide-plane', !showAx);
+    boxMprCoronal.classList.toggle('hide-plane', !showCor);
+    boxMprSagittal.classList.toggle('hide-plane', !showSag);
+
+    const visibleCount = (showAx ? 1 : 0) + (showCor ? 1 : 0) + (showSag ? 1 : 0);
+
+    // Adjust grid columns dynamically based on how many are selected
+    if (visibleCount === 3) {
+      mprGrid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    } else if (visibleCount === 2) {
+      mprGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    } else {
+      mprGrid.style.gridTemplateColumns = '1fr';
+    }
+  }
+
+  [chkMprAxial, chkMprCoronal, chkMprSagittal].forEach(chk => {
+    chk.addEventListener('change', () => {
+      // Ensure at least one plane remains selected
+      if (!chkMprAxial.checked && !chkMprCoronal.checked && !chkMprSagittal.checked) {
+        chk.checked = true;
+      }
+      updateMprVisiblePlanes();
+      if (viewMprActive) fetchMprViews();
+    });
+  });
+
+  btnViewMpr.addEventListener('click', () => {
+    viewMprActive = !viewMprActive;
+    btnViewMpr.classList.toggle('active', viewMprActive);
+    mprGrid.style.display = viewMprActive ? 'grid' : 'none';
+    mprSelectorGroup.style.display = viewMprActive ? 'inline-flex' : 'none';
+    viewFrame.style.display = viewMprActive ? 'none' : 'flex';
+    viewCrosshairV.style.display = viewMprActive ? 'block' : 'none';
+    viewCrosshairH.style.display = viewMprActive ? 'block' : 'none';
+
+    if (viewMprActive) {
+      updateMprVisiblePlanes();
+      fetchMprViews();
+    } else {
+      fetchViewSlice(viewCurrentSlice);
+    }
+  });
+
+  async function fetchMprViews() {
+    if (!viewSessionId) return;
+    const reqSeq = ++mprReqSeq;
+    const sessionId = viewSessionId;
+    const fd = new FormData();
+    fd.append('session_id', viewSessionId);
+    fd.append('z', viewCurrentSlice);
+    fd.append('x', mprNormX);
+    fd.append('y', mprNormY);
+    if (!viewAutoWl.checked) {
+      fd.append('window_center', viewWlSlider.value);
+      fd.append('window_width', viewWwSlider.value);
+    }
+
+    try {
+      const res = await fetch('/api/view_mpr', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (reqSeq !== mprReqSeq || sessionId !== viewSessionId || !viewMprActive) return;
+      if (!res.ok) throw new Error(data.error || 'MPR generation failed');
+      if (viewAutoWl.checked) setViewWindowSliders(data.window);
+      viewCurrentSlice = data.coords.z;
+      viewSliceSlider.value = viewCurrentSlice;
+      viewSliceCounter.textContent = `SLICE ${String(viewCurrentSlice + 1).padStart(2, '0')} / ${String(data.dims.z).padStart(2, '0')}`;
+
+      // Update 3 image panes
+      imgMprAxial.src = data.axial;
+      imgMprCoronal.src = data.coronal;
+      imgMprSagittal.src = data.sagittal;
+      imgMprAxial.style.display = 'block';
+      imgMprCoronal.style.display = 'block';
+      imgMprSagittal.style.display = 'block';
+
+      // Update coordinate badges
+      mprCoordZ.textContent = `Z: ${data.coords.z + 1}/${data.dims.z}`;
+      mprCoordY.textContent = `Y: ${data.coords.y + 1}/${data.dims.y}`;
+      mprCoordX.textContent = `X: ${data.coords.x + 1}/${data.dims.x}`;
+
+      // Update intensity readouts
+      const valStr = Number.isInteger(data.value) ? data.value : data.value.toFixed(2);
+      statIntensity.textContent = `${valStr} (Z:${data.coords.z}, Y:${data.coords.y}, X:${data.coords.x})`;
+
+      // Crosshair positions inside the 3 orthogonal frames
+      positionMprCrosshairs(data.coords, data.dims);
+    } catch (err) {
+      console.warn('MPR error:', err);
+    }
+  }
+
+  function positionMprCrosshairs(coords, dims) {
+    // 1. Axial: X along width, Y along height
+    const axX = (coords.x / dims.x) * 100;
+    const axY = (coords.y / dims.y) * 100;
+    mprCrosshairAxialV.style.left = `${axX}%`;
+    mprCrosshairAxialH.style.top = `${axY}%`;
+    mprCrosshairAxialV.style.display = 'block';
+    mprCrosshairAxialH.style.display = 'block';
+
+    // 2. Coronal: X along width, inverted Z along height (since Z goes upward)
+    const corX = (coords.x / dims.x) * 100;
+    const corZ = ((dims.z - 1 - coords.z) / dims.z) * 100;
+    mprCrosshairCoronalV.style.left = `${corX}%`;
+    mprCrosshairCoronalH.style.top = `${corZ}%`;
+    mprCrosshairCoronalV.style.display = 'block';
+    mprCrosshairCoronalH.style.display = 'block';
+
+    // 3. Sagittal: Y along width, inverted Z along height
+    const sagY = (coords.y / dims.y) * 100;
+    const sagZ = ((dims.z - 1 - coords.z) / dims.z) * 100;
+    mprCrosshairSagittalV.style.left = `${sagY}%`;
+    mprCrosshairSagittalH.style.top = `${sagZ}%`;
+    mprCrosshairSagittalV.style.display = 'block';
+    mprCrosshairSagittalH.style.display = 'block';
+  }
+
+  // Interactive navigation on MPR Axial frame
+  const mprFrameAxial = document.getElementById('mprFrameAxial');
+  mprFrameAxial.addEventListener('click', (e) => {
+    const box = renderedImageBox(imgMprAxial);
+    const rect = imgMprAxial.getBoundingClientRect();
+    const clickX = e.clientX - rect.left - box.left;
+    const clickY = e.clientY - rect.top - box.top;
+    if (clickX < 0 || clickX > box.width || clickY < 0 || clickY > box.height) return;
+    mprNormX = Math.max(0, Math.min(1, clickX / box.width));
+    mprNormY = Math.max(0, Math.min(1, clickY / box.height));
+    fetchMprViews();
+  });
+
+  // Interactive navigation on MPR Coronal frame (X and Z)
+  const mprFrameCoronal = document.getElementById('mprFrameCoronal');
+  mprFrameCoronal.addEventListener('click', (e) => {
+    const box = renderedImageBox(imgMprCoronal);
+    const rect = imgMprCoronal.getBoundingClientRect();
+    const clickX = e.clientX - rect.left - box.left;
+    const clickY = e.clientY - rect.top - box.top;
+    if (clickX < 0 || clickX > box.width || clickY < 0 || clickY > box.height) return;
+    mprNormX = Math.max(0, Math.min(1, clickX / box.width));
+    const invZ = Math.max(0, Math.min(1, clickY / box.height));
+    viewCurrentSlice = Math.round((1.0 - invZ) * (viewMaxSlices - 1));
+    viewSliceSlider.value = viewCurrentSlice;
+    viewSliceCounter.textContent = `SLICE ${String(viewCurrentSlice + 1).padStart(2, '0')} / ${String(viewMaxSlices).padStart(2, '0')}`;
+    fetchMprViews();
+  });
+
+  // Interactive navigation on MPR Sagittal frame (Y and Z)
+  const mprFrameSagittal = document.getElementById('mprFrameSagittal');
+  mprFrameSagittal.addEventListener('click', (e) => {
+    const box = renderedImageBox(imgMprSagittal);
+    const rect = imgMprSagittal.getBoundingClientRect();
+    const clickX = e.clientX - rect.left - box.left;
+    const clickY = e.clientY - rect.top - box.top;
+    if (clickX < 0 || clickX > box.width || clickY < 0 || clickY > box.height) return;
+    mprNormY = Math.max(0, Math.min(1, clickX / box.width));
+    const invZ = Math.max(0, Math.min(1, clickY / box.height));
+    viewCurrentSlice = Math.round((1.0 - invZ) * (viewMaxSlices - 1));
+    viewSliceSlider.value = viewCurrentSlice;
+    viewSliceCounter.textContent = `SLICE ${String(viewCurrentSlice + 1).padStart(2, '0')} / ${String(viewMaxSlices).padStart(2, '0')}`;
+    fetchMprViews();
+  });
+
+  // ---------- Viewer Frame Size Selector Logic ----------
+  function setViewFrameSize(size) {
+    btnViewSizeCompact.classList.toggle('active', size === 'compact');
+    btnViewSizeMedium.classList.toggle('active', size === 'medium');
+    btnViewSizeLarge.classList.toggle('active', size === 'large');
+
+    viewFrame.classList.remove('view-size-compact', 'view-size-medium', 'view-size-large');
+    viewFrame.classList.add(`view-size-${size}`);
+
+    [mprFrameAxial, mprFrameCoronal, mprFrameSagittal].forEach(f => {
+      if (f) {
+        f.classList.remove('view-size-compact', 'view-size-medium', 'view-size-large');
+        f.classList.add(`view-size-${size}`);
+      }
+    });
+  }
+
+  btnViewSizeCompact.addEventListener('click', () => setViewFrameSize('compact'));
+  btnViewSizeMedium.addEventListener('click', () => setViewFrameSize('medium'));
+  btnViewSizeLarge.addEventListener('click', () => setViewFrameSize('large'));
+
+  // ---------- Compare Frame Size Modes ----------
+  function setCompareSizeMode(mode) {
+    btnSizeNormal.classList.toggle('active', mode === 'normal');
+    btnSizeLarge.classList.toggle('active', mode === 'large');
+    btnSizeFocus.classList.toggle('active', mode === 'focus');
+
+    visualRow.classList.remove('size-large', 'size-focus');
+    pageContainer.classList.remove('focus-layout');
+    if (boxDiff) boxDiff.style.display = 'block';
+
+    if (mode === 'large') {
+      visualRow.classList.add('size-large');
+      pageContainer.classList.add('focus-layout');
+    } else if (mode === 'focus') {
+      visualRow.classList.add('size-focus');
+      pageContainer.classList.add('focus-layout');
+      if (boxDiff) boxDiff.style.display = 'none';
+    }
+  }
+
+  btnSizeNormal.addEventListener('click', () => setCompareSizeMode('normal'));
+  btnSizeLarge.addEventListener('click', () => setCompareSizeMode('large'));
+  btnSizeFocus.addEventListener('click', () => setCompareSizeMode('focus'));
+
+  // ---------- init ----------
+  createJobAndSelectFirst();
+  setStatus('IDLE');
+</script>
+</body>
+</html>

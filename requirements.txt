@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+python-multipart
+numpy
+scipy
+scikit-image
+scikit-learn
+matplotlib
+pandas
+pydicom
+pylibjpeg
+pylibjpeg-libjpeg
+pylibjpeg-openjpeg
+SimpleITK
+nibabel
+imageio
+Pillow
+pywebview
+pyinstaller  # build only: ImageMetricStudio.spec
