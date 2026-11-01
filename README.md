@@ -13,6 +13,11 @@ Designed for biomedical imaging researchers, computer vision engineers, and radi
   - **Correlation & Information**: NCC, Mutual Information (MI), Normalized Mutual Information (NMI).
   - **Perceptual & Structure**: High-Frequency Error Norm (HFEN), Gradient Magnitude Similarity Deviation (GMSD).
   - **Segmentation & Overlap**: Dice Coefficient, Jaccard Index (IoU), 95th Percentile Hausdorff Distance (HD95 in physical millimeters or voxels).
+- **Three-Way Fast · Restore · Org Comparison**:
+  - Optional third input **Fast · C** (e.g. the undersampled scan) next to **Restore · B** (model output) and **Org · A** (reference).
+  - Images shown side by side (Fast | Restore | Org), each error map under its image on one shared color scale.
+  - Metrics for Fast vs Org and Restore vs Org with a Restore − Fast delta column; per-slice chart, CSV export and combined PNG include both.
+  - Leave Fast empty for the classic two-way Restore vs Org comparison.
 - **Synchronized Multi-Slice Viewer**:
   - Side-by-side synchronized pan, zoom, and crosshair probing.
   - Cine playback with adjustable FPS and keyboard navigation (`←` / `→`).

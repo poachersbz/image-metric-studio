@@ -21,12 +21,14 @@ function testLastPairRemoval() {
     jobs: [], activeJobId: null, jobCounter: 0, currentSessionId: 'old-session',
     activeRequestController: null, volumeRequestController: null, volumeChartInstance: null,
     renderQueue() {}, updateFileLabel() {}, checkInputs() {}, setStatus() {}, setExportHint() {},
+    setThreeWay(on) { ctx.threeWay = on; },
   };
   for (const name of `successBanner warningBanner errorBanner metaContainer sliderCard
     sliceRuler imgPreviewA placeholderA imgPreviewB placeholderB imgDiffMap placeholderDiff
+    imgPreviewC placeholderC imgDiffMapC placeholderDiffC dlC dlDiffC roiRectC roiRectDiffC
     dlA dlB dlDiff sliceMetricsBody volumeMetricsBody chartHint btnRunVolume loadingOverlay
     btnCompareLabel sessionChip btnSaveCombined btnSaveAllSlices roiRectA roiRectB roiRectDiff
-    roiBadgeA fileName1 iconA fileName2 iconB`.split(/\s+/)) ctx[name] = element();
+    roiBadgeA fileName1 iconA fileName2 iconB fileName3 iconC`.split(/\s+/)) ctx[name] = element();
   vm.createContext(ctx);
   vm.runInContext(between('  function createJob()', '  function renderQueue()'), ctx);
   vm.runInContext(between('  function clearWorkspace()', "  btnAddPair.addEventListener"), ctx);
@@ -35,7 +37,29 @@ function testLastPairRemoval() {
   assert.equal(ctx.currentSessionId, null);
   assert.equal(ctx.jobs.length, 1);
   assert.equal(ctx.jobs[0].sessionId, null);
+  assert.equal(ctx.jobs[0].files3.length, 0);
+  assert.equal(ctx.threeWay, false);
   assert.equal(ctx.activeJobId, ctx.jobs[0].id);
+}
+
+function testThreeWayMetricsTable() {
+  const rows = [];
+  const ctx = {
+    sliceMetricsBody: { set innerHTML(v) { rows.length = 0; }, appendChild(row) { rows.push(row); } },
+    document: { createElement: () => ({}) },
+    HIGHER_BETTER: new Set(['SSIM']), hd95Unit: 'px',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(between('  function qualityColor(', '  function populateVolumeTable('), ctx);
+  ctx.populateMetricsTable({ PSNR: 35, SSIM: 0.95, NRMSE: 0.02 }, { PSNR: 25, SSIM: 0.8, NRMSE: 0.09 });
+  assert.equal(rows.length, 3);
+  assert(rows.every(row => row.className === 'metric-row three'));
+  // Restore beats Fast on every metric -> every delta is green, signed correctly.
+  assert.match(rows[0].innerHTML, /\+10\.00 dB/);
+  assert.match(rows[2].innerHTML, /-0\.0700/);
+  assert(rows.every(row => row.innerHTML.includes('metric-delta" style="color:var(--success);')));
+  ctx.populateMetricsTable({ SSIM: 0.9 }, null);
+  assert.equal(rows[0].className, 'metric-row');
 }
 
 async function testExportSnapshot() {
@@ -128,7 +152,8 @@ async function testMprControls() {
     new vm.Script(match[1]);
   }
   testLastPairRemoval();
+  testThreeWayMetricsTable();
   await testExportSnapshot();
   await testMprControls();
-  console.log('OK: page syntax, pair removal, export snapshot, MPR controls');
+  console.log('OK: page syntax, pair removal, three-way table, export snapshot, MPR controls');
 })().catch(error => { console.error(error); process.exitCode = 1; });

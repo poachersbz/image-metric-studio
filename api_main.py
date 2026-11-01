@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from core.loaders import load_image, ImageMeta
 from core.preprocess import check_compatibility, normalize_pair, resample_to_match, brain_mask
 from core.metrics import compute_metrics, METRICS
-from core.diffmap import compute_diff_map
+from core.diffmap import compute_diff_map, diff_clip_value
 from core.registration import register_2d, apply_transform_2d, register_3d, apply_transform_3d
 
 app = FastAPI(title="Image & Volume Metric Studio")
@@ -77,6 +77,10 @@ MEM_CACHE_MAX = 4
 _MEM_LOCK = threading.Lock()
 _MEM_CACHE = OrderedDict()  # compare sessions: session_id -> loaded tuple
 
+# Session tuples are (arr_a, meta_a, arr_b, meta_b, warnings, session_id, arr_c, meta_c):
+# A = Org (reference), B = Restore, C = Fast (optional; arr_c/meta_c are None
+# for a plain two-way comparison).
+
 
 def _lru_put(cache: OrderedDict, key, value):
     with _MEM_LOCK:
@@ -90,13 +94,13 @@ def _mem_put(key, value):
     _lru_put(_MEM_CACHE, key, value)
 
 
-_RESAMPLE_CACHE = OrderedDict()  # (session_id, target_shape) -> resampled B (read-only; never mutate)
+_RESAMPLE_CACHE = OrderedDict()  # (session_id, tag, target_shape) -> resampled B/C (read-only; never mutate)
 
 
-def _resampled_b(session_id, arr_b, target_shape):
+def _resampled(session_id, arr_b, target_shape, tag="b"):
     if arr_b.shape == tuple(target_shape):
         return arr_b
-    key = (session_id, tuple(target_shape))
+    key = (session_id, tag, tuple(target_shape))
     with _MEM_LOCK:
         hit = _RESAMPLE_CACHE.get(key)
         if hit is not None:
@@ -177,7 +181,8 @@ def _prune_disk_cache():
             total_bytes -= s["size"]
 
 
-def _save_session_to_disk(arr_a: np.ndarray, meta_a: ImageMeta, arr_b: np.ndarray, meta_b: ImageMeta, warnings: list) -> str:
+def _save_session_to_disk(arr_a: np.ndarray, meta_a: ImageMeta, arr_b: np.ndarray, meta_b: ImageMeta, warnings: list,
+                          arr_c: np.ndarray = None, meta_c: ImageMeta = None) -> str:
     os.makedirs(CACHE_DIR, exist_ok=True)
     session_id = uuid.uuid4().hex
     staging_dir = os.path.join(CACHE_DIR, f".tmp_{session_id}_{os.getpid()}")
@@ -187,9 +192,12 @@ def _save_session_to_disk(arr_a: np.ndarray, meta_a: ImageMeta, arr_b: np.ndarra
     try:
         np.save(os.path.join(staging_dir, "arr_a.npy"), arr_a)
         np.save(os.path.join(staging_dir, "arr_b.npy"), arr_b)
+        if arr_c is not None:
+            np.save(os.path.join(staging_dir, "arr_c.npy"), arr_c)
         meta_payload = {
             "meta_a": meta_a,
             "meta_b": meta_b,
+            "meta_c": meta_c,
             "warnings": warnings,
             "timestamp": time.time()
         }
@@ -202,7 +210,7 @@ def _save_session_to_disk(arr_a: np.ndarray, meta_a: ImageMeta, arr_b: np.ndarra
         raise
 
     _prune_disk_cache()
-    _mem_put(session_id, (arr_a, meta_a, arr_b, meta_b, warnings, session_id))
+    _mem_put(session_id, (arr_a, meta_a, arr_b, meta_b, warnings, session_id, arr_c, meta_c))
     return session_id
 
 
@@ -244,7 +252,14 @@ def _load_session_from_disk(session_id: str):
         meta_a = meta_payload["meta_a"]
         meta_b = meta_payload["meta_b"]
         warnings = meta_payload["warnings"]
-        result = (arr_a, meta_a, arr_b, meta_b, warnings, session_id)
+        meta_c = meta_payload.get("meta_c")
+        arr_c = None
+        if meta_c is not None:
+            arr_c_path = os.path.join(session_dir, "arr_c.npy")
+            if not os.path.isfile(arr_c_path):
+                return None
+            arr_c = np.load(arr_c_path)
+        result = (arr_a, meta_a, arr_b, meta_b, warnings, session_id, arr_c, meta_c)
         _mem_put(session_id, result)
         return result
     except Exception:
@@ -477,9 +492,9 @@ def _combine_masks(roi, brain):
     return roi & brain
 
 
-def _load_pair(file1, file2, session_id):
-    """Resolve a (arr_a, meta_a, arr_b, meta_b, warnings, session_id) tuple from
-    either the volume disk store or freshly uploaded files, caching the latter."""
+def _load_pair(file1, file2, session_id, file3=None):
+    """Resolve a session tuple (see _MEM_CACHE) from either the volume disk
+    store or freshly uploaded files, caching the latter. file3 (Fast) is optional."""
     if session_id:
         cached = _load_session_from_disk(session_id)
         if cached is not None:
@@ -488,115 +503,104 @@ def _load_pair(file1, file2, session_id):
     if not file1 or not file2:
         raise PipelineError("Session expired or files missing. Please upload files again.", 400)
 
-    path1, path2 = None, None
+    def _read(path, label):
+        try:
+            arr, meta = load_image(path)
+            _validate_loaded_array(arr, label)
+            return arr, meta
+        except PipelineError:
+            raise
+        except Exception as e:
+            raise PipelineError(f"Could not read the {label} dataset: {e}", 400)
+
+    path1, path2, path3 = None, None, None
+    arr_c, meta_c = None, None
     try:
         path1 = _save_uploads(file1)
         path2 = _save_uploads(file2)
-
-        try:
-            arr_a, meta_a = load_image(path1)
-            _validate_loaded_array(arr_a, "Reference (A)")
-        except PipelineError:
-            raise
-        except Exception as e:
-            raise PipelineError(f"Could not read the Reference (A) dataset: {e}", 400)
-
-        try:
-            arr_b, meta_b = load_image(path2)
-            _validate_loaded_array(arr_b, "Test (B)")
-        except PipelineError:
-            raise
-        except Exception as e:
-            raise PipelineError(f"Could not read the Test (B) dataset: {e}", 400)
+        arr_a, meta_a = _read(path1, "Org (A)")
+        arr_b, meta_b = _read(path2, "Restore (B)")
+        if file3:
+            path3 = _save_uploads(file3)
+            arr_c, meta_c = _read(path3, "Fast (C)")
     finally:
         _cleanup_paths(path1)
         _cleanup_paths(path2)
+        _cleanup_paths(path3)
 
     # Surface loader-level notes (e.g. a repaired/omitted DICOM geometry tag)
     # alongside the compatibility messages, tagged so it's clear which side they came from.
     warnings = []
-    for label, meta in (("Reference · A", meta_a), ("Test · B", meta_b)):
+    sides = [("Org · A", meta_a), ("Restore · B", meta_b)]
+    if meta_c is not None:
+        sides.append(("Fast · C", meta_c))
+    for label, meta in sides:
         for note in (meta.warnings or []):
             warnings.append(f"{label}: {note}")
-    warnings.extend(check_compatibility(meta_a, meta_b)["messages"])
+    warnings.extend(f"Restore · B: {m}" if meta_c is not None else m
+                    for m in check_compatibility(meta_a, meta_b)["messages"])
+    if meta_c is not None:
+        warnings.extend(f"Fast · C: {m}" for m in check_compatibility(meta_a, meta_c)["messages"])
 
-    session_id = _save_session_to_disk(arr_a, meta_a, arr_b, meta_b, warnings)
-    return arr_a, meta_a, arr_b, meta_b, warnings, session_id
+    session_id = _save_session_to_disk(arr_a, meta_a, arr_b, meta_b, warnings, arr_c, meta_c)
+    return arr_a, meta_a, arr_b, meta_b, warnings, session_id, arr_c, meta_c
 
 
-def _prepare_slice(file1, file2, session_id, slice_idx, normalize, resample,
-                    brain_only, do_register, register_type,
-                    roi_x=None, roi_y=None, roi_w=None, roi_h=None,
-                    window_center=None, window_width=None):
-    """Shared front half of the comparison pipeline: load -> resample -> normalize
-    -> extract the requested slice -> optionally register B onto A. Returns a dict
-    of everything the response builders need, so /api/compare and the plot
-    endpoint always render the exact same data."""
-    _validate_roi_and_window(roi_x, roi_y, roi_w, roi_h, window_center, window_width)
-    arr_a, meta_a, arr_b, meta_b, warnings, session_id = _load_pair(file1, file2, session_id)
+def _prepare_side(session_id, tag, label, arr_a, meta_a, arr_t, meta_t, normalize, resample):
+    """Bring one test volume (Restore or Fast) onto the Org grid and intensity
+    scale. Each side is normalized as its own pair with A, so its metrics are
+    identical to a plain two-way run of the same two files."""
+    arr_t_proc = arr_t
+    if resample and meta_a.shape != meta_t.shape:
+        arr_t_proc = _resampled(session_id, arr_t, meta_a.shape, tag)
 
-    # Preprocess cached volumes without mutating the raw cached data
-    arr_b_proc = arr_b
-    meta_b_shape = meta_b.shape
-    if resample and meta_a.shape != meta_b.shape:
-        arr_b_proc = _resampled_b(session_id, arr_b, meta_a.shape)
-        meta_b_shape = arr_b_proc.shape
-
-    if arr_a.ndim != arr_b_proc.ndim:
-        raise PipelineError(f"NDIM mismatch: {arr_a.ndim} vs {arr_b_proc.ndim}", 400)
-    if arr_a.shape != arr_b_proc.shape:
+    if arr_a.ndim != arr_t_proc.ndim:
+        raise PipelineError(f"NDIM mismatch ({label}): {arr_a.ndim} vs {arr_t_proc.ndim}", 400)
+    if arr_a.shape != arr_t_proc.shape:
         raise PipelineError(
-            f"Shape mismatch: {arr_a.shape} vs {arr_b_proc.shape}. Try checking 'Resample'.",
+            f"Shape mismatch ({label}): {arr_a.shape} vs {arr_t_proc.shape}. Try checking 'Resample'.",
             400
         )
 
     if normalize:
-        arr_a_norm, arr_b_norm = normalize_pair(arr_a, arr_b_proc)
+        arr_a_norm, arr_t_norm = normalize_pair(arr_a, arr_t_proc)
         data_range = 1.0
     else:
-        arr_a_norm, arr_b_norm = arr_a, arr_b_proc
+        arr_a_norm, arr_t_norm = arr_a, arr_t_proc
         range_a = meta_a.intensity_max - meta_a.intensity_min
-        range_b = meta_b.intensity_max - meta_b.intensity_min
-        data_range = max(range_a, range_b, 1e-9)
+        range_t = meta_t.intensity_max - meta_t.intensity_min
+        data_range = max(range_a, range_t, 1e-9)
+    return {"proc": arr_t_proc, "a_norm": arr_a_norm, "t_norm": arr_t_norm, "data_range": data_range}
 
-    # Slice extraction (for 3D)
-    max_slices = 1
-    is_3d = arr_a.ndim == 3
+
+def _slice_side(side, meta_t, raw_slice_a, slice_idx, is_3d, do_register, register_type):
+    """Extract the requested slice of one prepared side and optionally register
+    it onto A (rigid/affine) so pixel-wise metrics aren't biased by misalignment.
+    The same transform is applied to the raw slice so the preview reflects what
+    the metrics actually saw."""
     if is_3d:
-        max_slices = arr_a.shape[0]
-        slice_idx = max(0, min(slice_idx, max_slices - 1))
-        slice_a = arr_a_norm[slice_idx]
-        slice_b = arr_b_norm[slice_idx]
-        raw_slice_a = arr_a[slice_idx]
-        raw_slice_b = arr_b_proc[slice_idx]
-        wc_a, ww_a = _slice_window(meta_a, slice_idx, arr_a.shape[0])
-        # arr_b_proc may have been resampled, so its slice count/index no longer
-        # lines up with meta_b's per-slice window list -- only trust it unresampled.
-        wc_b, ww_b = _slice_window(meta_b, slice_idx, arr_b_proc.shape[0])
+        slice_a = side["a_norm"][slice_idx]
+        slice_t = side["t_norm"][slice_idx]
+        raw_slice_t = side["proc"][slice_idx]
+        # proc may have been resampled, so its slice count/index no longer
+        # lines up with meta_t's per-slice window list -- only trust it unresampled.
+        wc, ww = _slice_window(meta_t, slice_idx, side["proc"].shape[0])
     else:
-        slice_idx = 0
-        slice_a = arr_a_norm
-        slice_b = arr_b_norm
-        raw_slice_a = arr_a
-        raw_slice_b = arr_b_proc
-        wc_a, ww_a = meta_a.window_center, meta_a.window_width
-        wc_b, ww_b = meta_b.window_center, meta_b.window_width
+        slice_a = side["a_norm"]
+        slice_t = side["t_norm"]
+        raw_slice_t = side["proc"]
+        wc, ww = meta_t.window_center, meta_t.window_width
 
-    # Optionally register slice B onto slice A (rigid/affine) so pixel-wise
-    # metrics aren't biased by misalignment between the two acquisitions.
-    # The same transform is applied to the raw slice so the preview reflects
-    # what the metrics actually saw.
     reg_info = None
     fov = None
     if do_register:
         try:
-            tx, info = register_2d(slice_a, slice_b, transform_type=register_type)
-            # Pixels that fall outside B's field of view are zero-filled by the
-            # warp; exclude them from scoring.
-            fov_b = apply_transform_2d(slice_a, np.ones_like(slice_b, dtype=np.float32), tx) > 0.5
-            slice_b = apply_transform_2d(slice_a, slice_b, tx)
-            raw_slice_b = apply_transform_2d(raw_slice_a, raw_slice_b, tx)
-            fov = fov_b
+            tx, info = register_2d(slice_a, slice_t, transform_type=register_type)
+            # Pixels that fall outside the test field of view are zero-filled by
+            # the warp; exclude them from scoring.
+            fov = apply_transform_2d(slice_a, np.ones_like(slice_t, dtype=np.float32), tx) > 0.5
+            slice_t = apply_transform_2d(slice_a, slice_t, tx)
+            raw_slice_t = apply_transform_2d(raw_slice_a, raw_slice_t, tx)
             reg_info = {
                 "transform_type": info.transform_type,
                 "translation_x": info.translation[0],
@@ -609,27 +613,117 @@ def _prepare_slice(file1, file2, session_id, slice_idx, normalize, resample,
         except Exception as e:
             reg_info = {"error": f"{type(e).__name__}: {e}"}
 
-    roi = _roi_mask(slice_a.shape, roi_x, roi_y, roi_w, roi_h)
-    mask = _combine_masks(roi, brain_mask(slice_a) if brain_only else None)
+    return {"slice_a": slice_a, "slice": slice_t, "raw_slice": raw_slice_t,
+            "wc": wc, "ww": ww, "data_range": side["data_range"],
+            "fov": fov, "reg_info": reg_info, "shape": side["proc"].shape}
+
+
+def _side_mask(roi, brain, fov):
+    mask = _combine_masks(roi, brain)
     if fov is not None and not fov.all():
         mask = fov if mask is None else (mask & fov)
     if mask is not None and not mask.any():
         raise PipelineError(
             "The selected region contains no pixels to measure"
-            + (" (the ROI and the brain mask don't overlap)." if roi is not None and brain_only
+            + (" (the ROI and the brain mask don't overlap)." if roi is not None and brain is not None
                else ". Draw a larger region."),
             400
         )
+    return mask
+
+
+def _prepare_slice(file1, file2, session_id, slice_idx, normalize, resample,
+                    brain_only, do_register, register_type,
+                    roi_x=None, roi_y=None, roi_w=None, roi_h=None,
+                    window_center=None, window_width=None, file3=None):
+    """Shared front half of the comparison pipeline: load -> resample -> normalize
+    -> extract the requested slice -> optionally register B (and C) onto A.
+    Returns a dict of everything the response builders need, so /api/compare and
+    the plot endpoint always render the exact same data. "fast" holds the same
+    per-side fields for C, or None in a two-way comparison."""
+    _validate_roi_and_window(roi_x, roi_y, roi_w, roi_h, window_center, window_width)
+    arr_a, meta_a, arr_b, meta_b, warnings, session_id, arr_c, meta_c = _load_pair(
+        file1, file2, session_id, file3)
+
+    # Preprocess cached volumes without mutating the raw cached data
+    side_b = _prepare_side(session_id, "b", "Restore · B", arr_a, meta_a, arr_b, meta_b,
+                           normalize, resample)
+    side_c = None
+    if arr_c is not None:
+        side_c = _prepare_side(session_id, "c", "Fast · C", arr_a, meta_a, arr_c, meta_c,
+                               normalize, resample)
+
+    # Slice extraction (for 3D)
+    max_slices = 1
+    is_3d = arr_a.ndim == 3
+    if is_3d:
+        max_slices = arr_a.shape[0]
+        slice_idx = max(0, min(slice_idx, max_slices - 1))
+        raw_slice_a = arr_a[slice_idx]
+        wc_a, ww_a = _slice_window(meta_a, slice_idx, arr_a.shape[0])
+    else:
+        slice_idx = 0
+        raw_slice_a = arr_a
+        wc_a, ww_a = meta_a.window_center, meta_a.window_width
+
+    b = _slice_side(side_b, meta_b, raw_slice_a, slice_idx, is_3d, do_register, register_type)
+    c = None
+    if side_c is not None:
+        c = _slice_side(side_c, meta_c, raw_slice_a, slice_idx, is_3d, do_register, register_type)
+
+    roi = _roi_mask(b["slice_a"].shape, roi_x, roi_y, roi_w, roi_h)
+    brain = brain_mask(b["slice_a"]) if brain_only else None
+    b["mask"] = _side_mask(roi, brain, b["fov"])
+    if c is not None:
+        c["mask"] = _side_mask(roi, brain, c["fov"])
 
     return {
         "session_id": session_id, "warnings": warnings, "roi": roi,
-        "meta_a": meta_a, "meta_b": meta_b, "meta_b_shape": meta_b_shape,
-        "slice_a": slice_a, "slice_b": slice_b,
-        "raw_slice_a": raw_slice_a, "raw_slice_b": raw_slice_b,
-        "wc_a": wc_a, "ww_a": ww_a, "wc_b": wc_b, "ww_b": ww_b,
-        "data_range": data_range, "mask": mask, "reg_info": reg_info,
+        "meta_a": meta_a, "meta_b": meta_b, "meta_b_shape": b["shape"],
+        "slice_a": b["slice_a"], "slice_b": b["slice"],
+        "raw_slice_a": raw_slice_a, "raw_slice_b": b["raw_slice"],
+        "wc_a": wc_a, "ww_a": ww_a, "wc_b": b["wc"], "ww_b": b["ww"],
+        "data_range": b["data_range"], "mask": b["mask"], "reg_info": b["reg_info"],
         "slice_idx": slice_idx, "max_slices": max_slices, "is_3d": is_3d,
         "hd95_spacing": _hd95_spacing(meta_a.spacing, arr_a.ndim, is_3d),
+        "meta_c": meta_c, "fast": c,
+    }
+
+
+def _diff_maps(ctx, diff_mode, diff_cmap):
+    """Error maps for Restore (and Fast). In a three-way comparison both maps
+    share one color ceiling so their brightness is directly comparable."""
+    fast = ctx["fast"]
+    clip_hi = None
+    if fast is not None:
+        clip_hi = max(diff_clip_value(ctx["slice_a"], ctx["slice_b"]),
+                      diff_clip_value(fast["slice_a"], fast["slice"]))
+    diff_b = compute_diff_map(ctx["slice_a"], ctx["slice_b"], mode=diff_mode,
+                              colormap=diff_cmap, clip_hi=clip_hi)
+    diff_c = None
+    if fast is not None:
+        diff_c = compute_diff_map(fast["slice_a"], fast["slice"], mode=diff_mode,
+                                  colormap=diff_cmap, clip_hi=clip_hi)
+    return diff_b, diff_c
+
+
+def _meta_json(meta, shape):
+    return {
+        "kind": meta.kind,
+        "shape": shape,
+        "dtype": meta.dtype,
+        "min": meta.intensity_min,
+        "max": meta.intensity_max,
+        "sequence": meta.sequence
+    }
+
+
+def _measured(mask, total, roi_active, brain_only):
+    return {
+        "roi_active": roi_active,
+        "brain_only": bool(brain_only),
+        "pixels": int(mask.sum()) if mask is not None else int(total),
+        "total_pixels": int(total),
     }
 
 
@@ -637,6 +731,7 @@ def _prepare_slice(file1, file2, session_id, slice_idx, normalize, resample,
 def api_compare(
     file1: list[UploadFile] = File(None),
     file2: list[UploadFile] = File(None),
+    file3: list[UploadFile] = File(None),
     session_id: str = Form(None),
     slice_idx: int = Form(0),
     normalize: bool = Form(False),
@@ -656,7 +751,7 @@ def api_compare(
     try:
         ctx = _prepare_slice(file1, file2, session_id, slice_idx, normalize,
                               resample, brain_only, do_register, register_type,
-                              roi_x, roi_y, roi_w, roi_h, window_center, window_width)
+                              roi_x, roi_y, roi_w, roi_h, window_center, window_width, file3)
     except PipelineError as e:
         return JSONResponse(status_code=e.status_code, content={"error": e.message})
 
@@ -668,30 +763,40 @@ def api_compare(
     wc_a, ww_a, wc_b, ww_b = ctx["wc_a"], ctx["ww_a"], ctx["wc_b"], ctx["ww_b"]
     data_range, mask, reg_info = ctx["data_range"], ctx["mask"], ctx["reg_info"]
     slice_idx, max_slices, is_3d = ctx["slice_idx"], ctx["max_slices"], ctx["is_3d"]
+    fast, meta_c = ctx["fast"], ctx["meta_c"]
 
     metrics_res = compute_metrics(slice_a, slice_b, data_range=data_range, mask=mask,
                                   spacing=ctx["hd95_spacing"])
-    diff_arr = compute_diff_map(slice_a, slice_b, mode=diff_mode, colormap=diff_cmap)
+    diff_arr, diff_c_arr = _diff_maps(ctx, diff_mode, diff_cmap)
     diff_b64 = _array_to_b64(diff_arr)
 
     manual_window = window_center is not None and window_width is not None
+    wc_c, ww_c = (fast["wc"], fast["ww"]) if fast is not None else (None, None)
     if manual_window:
-        wc_a = wc_b = window_center
-        ww_a = ww_b = window_width
+        wc_a = wc_b = wc_c = window_center
+        ww_a = ww_b = ww_c = window_width
 
-    scored_mask = ctx["mask"]
-    measured = {
-        "roi_active": ctx["roi"] is not None,
-        "brain_only": bool(brain_only),
-        "pixels": int(scored_mask.sum()) if scored_mask is not None else int(slice_a.size),
-        "total_pixels": int(slice_a.size),
-    }
+    roi_active = ctx["roi"] is not None
+    metas = [meta_a, meta_b] + ([meta_c] if meta_c is not None else [])
+
+    fast_out = None
+    if fast is not None:
+        fast_metrics = compute_metrics(fast["slice_a"], fast["slice"], data_range=fast["data_range"],
+                                       mask=fast["mask"], spacing=ctx["hd95_spacing"])
+        fast_out = {
+            "metrics": _json_safe_metrics(fast_metrics),
+            "measured": _measured(fast["mask"], fast["slice_a"].size, roi_active, brain_only),
+            "diff_map": f"data:image/png;base64,{_array_to_b64(diff_c_arr)}",
+            "preview": f"data:image/png;base64,{_array_to_b64(_window_to_uint8(fast['raw_slice'], wc_c, ww_c))}",
+            "registration": fast["reg_info"],
+            "meta": _meta_json(meta_c, fast["shape"]),
+        }
 
     return {
         "session_id": session_id,
         "metrics": _json_safe_metrics(metrics_res),
         "hd95_unit": "mm" if ctx["hd95_spacing"] else "px",
-        "measured": measured,
+        "measured": _measured(mask, slice_a.size, roi_active, brain_only),
         "diff_map": f"data:image/png;base64,{diff_b64}",
         "preview_a": f"data:image/png;base64,{_array_to_b64(_window_to_uint8(raw_slice_a, wc_a, ww_a))}",
         "preview_b": f"data:image/png;base64,{_array_to_b64(_window_to_uint8(raw_slice_b, wc_b, ww_b))}",
@@ -699,37 +804,35 @@ def api_compare(
             "center": wc_a,
             "width": ww_a,
             "manual": manual_window,
-            "data_min": float(min(meta_a.intensity_min, meta_b.intensity_min)),
-            "data_max": float(max(meta_a.intensity_max, meta_b.intensity_max))
+            "data_min": float(min(m.intensity_min for m in metas)),
+            "data_max": float(max(m.intensity_max for m in metas))
         },
         "warnings": warnings,
         "is_3d": is_3d,
         "max_slices": max_slices,
         "current_slice": slice_idx,
         "registration": reg_info,
-        "meta_a": {
-            "kind": meta_a.kind,
-            "shape": meta_a.shape,
-            "dtype": meta_a.dtype,
-            "min": meta_a.intensity_min,
-            "max": meta_a.intensity_max,
-            "sequence": meta_a.sequence
-        },
-        "meta_b": {
-            "kind": meta_b.kind,
-            "shape": meta_b_shape,
-            "dtype": meta_b.dtype,
-            "min": meta_b.intensity_min,
-            "max": meta_b.intensity_max,
-            "sequence": meta_b.sequence
-        }
+        "meta_a": _meta_json(meta_a, meta_a.shape),
+        "meta_b": _meta_json(meta_b, meta_b_shape),
+        "fast": fast_out,
     }
+
+
+def _metric_summary(metrics_res, keys=("PSNR", "SSIM", "MSE", "NCC", "HFEN"), sep="   "):
+    parts = []
+    for k in keys:
+        v = metrics_res.get(k)
+        if v is None:
+            continue
+        parts.append(f"{k}={'inf' if v == float('inf') else f'{v:.4f}'}")
+    return sep.join(parts)
 
 
 @app.post("/api/combined_plot")
 def api_combined_plot(
     file1: list[UploadFile] = File(None),
     file2: list[UploadFile] = File(None),
+    file3: list[UploadFile] = File(None),
     session_id: str = Form(None),
     slice_idx: int = Form(0),
     normalize: bool = Form(False),
@@ -756,40 +859,80 @@ def api_combined_plot(
     try:
         ctx = _prepare_slice(file1, file2, session_id, slice_idx, normalize,
                               resample, brain_only, do_register, register_type,
-                              roi_x, roi_y, roi_w, roi_h, window_center, window_width)
+                              roi_x, roi_y, roi_w, roi_h, window_center, window_width, file3)
     except PipelineError as e:
         return JSONResponse(status_code=e.status_code, content={"error": e.message})
 
-    meta_a, meta_b = ctx["meta_a"], ctx["meta_b"]
+    meta_a, meta_b, meta_c = ctx["meta_a"], ctx["meta_b"], ctx["meta_c"]
     raw_slice_a, raw_slice_b = ctx["raw_slice_a"], ctx["raw_slice_b"]
     wc_a, ww_a, wc_b, ww_b = ctx["wc_a"], ctx["ww_a"], ctx["wc_b"], ctx["ww_b"]
+    fast = ctx["fast"]
+    wc_c, ww_c = (fast["wc"], fast["ww"]) if fast is not None else (None, None)
 
     if window_center is not None and window_width is not None:
-        wc_a = wc_b = window_center
-        ww_a = ww_b = window_width
+        wc_a = wc_b = wc_c = window_center
+        ww_a = ww_b = ww_c = window_width
 
     metrics_res = compute_metrics(ctx["slice_a"], ctx["slice_b"],
                                    data_range=ctx["data_range"], mask=ctx["mask"])
-    diff_arr = compute_diff_map(ctx["slice_a"], ctx["slice_b"],
-                                 mode=diff_mode, colormap=diff_cmap)
+    diff_arr, diff_c_arr = _diff_maps(ctx, diff_mode, diff_cmap)
 
     img_a = _window_to_float01(raw_slice_a, wc_a, ww_a)
     img_b = _window_to_float01(raw_slice_b, wc_b, ww_b)
 
-    fig = Figure(figsize=(13.5, 5))
-    axes = fig.subplots(1, 3)
+    def seq_suffix(meta):
+        return chr(10) + meta.sequence if meta.sequence else ''
+
+    fig = Figure(figsize=(13.5, 5) if fast is None else (13.5, 9.5))
     fig.patch.set_facecolor("white")
 
-    axes[0].imshow(img_a, cmap="gray", vmin=0, vmax=1)
-    axes[0].set_title(f"Reference · A{chr(10) + meta_a.sequence if meta_a.sequence else ''}",
-                       fontsize=11, fontweight="bold")
-    axes[1].imshow(img_b, cmap="gray", vmin=0, vmax=1)
-    axes[1].set_title(f"Test · B{chr(10) + meta_b.sequence if meta_b.sequence else ''}",
-                       fontsize=11, fontweight="bold")
-    axes[2].imshow(diff_arr)
-    axes[2].set_title(f"Δ Error Map · {diff_mode}", fontsize=11, fontweight="bold")
+    if fast is None:
+        axes = fig.subplots(1, 3)
+        axes[0].imshow(img_a, cmap="gray", vmin=0, vmax=1)
+        axes[0].set_title(f"Org · A{seq_suffix(meta_a)}", fontsize=11, fontweight="bold")
+        axes[1].imshow(img_b, cmap="gray", vmin=0, vmax=1)
+        axes[1].set_title(f"Restore · B{seq_suffix(meta_b)}", fontsize=11, fontweight="bold")
+        axes[2].imshow(diff_arr)
+        axes[2].set_title(f"Δ Error Map · {diff_mode}", fontsize=11, fontweight="bold")
+        roi_axes = list(axes)
+        all_axes = list(axes)
+    else:
+        # Top row: Fast | Restore | Org. Bottom row: each test's error map
+        # under its own image (shared color scale), metric table on the right.
+        fast_metrics = compute_metrics(fast["slice_a"], fast["slice"],
+                                       data_range=fast["data_range"], mask=fast["mask"])
+        img_c = _window_to_float01(fast["raw_slice"], wc_c, ww_c)
+        grid = fig.subplots(2, 3)
+        grid[0, 0].imshow(img_c, cmap="gray", vmin=0, vmax=1)
+        grid[0, 0].set_title(f"Fast · C{seq_suffix(meta_c)}", fontsize=11, fontweight="bold")
+        grid[0, 1].imshow(img_b, cmap="gray", vmin=0, vmax=1)
+        grid[0, 1].set_title(f"Restore · B{seq_suffix(meta_b)}", fontsize=11, fontweight="bold")
+        grid[0, 2].imshow(img_a, cmap="gray", vmin=0, vmax=1)
+        grid[0, 2].set_title(f"Org · A{seq_suffix(meta_a)}", fontsize=11, fontweight="bold")
+        grid[1, 0].imshow(diff_c_arr)
+        grid[1, 0].set_title(f"Δ Fast vs Org · {diff_mode}", fontsize=11, fontweight="bold")
+        grid[1, 1].imshow(diff_arr)
+        grid[1, 1].set_title(f"Δ Restore vs Org · {diff_mode}", fontsize=11, fontweight="bold")
 
-    for ax in axes:
+        table_keys = ["PSNR", "SSIM", "NRMSE", "MAE", "NCC", "HFEN"]
+        rows = []
+        for k in table_keys:
+            fv, rv = fast_metrics.get(k), metrics_res.get(k)
+            if fv is None and rv is None:
+                continue
+            fmt = lambda v: "N/A" if v is None else ("inf" if v == float("inf") else f"{v:.4f}")
+            rows.append([k, fmt(fv), fmt(rv)])
+        if rows:
+            table = grid[1, 2].table(cellText=rows, colLabels=["Metric", "Fast", "Restore"],
+                                     loc="center", cellLoc="center")
+            table.auto_set_font_size(False)
+            table.set_fontsize(10)
+            table.scale(1, 1.6)
+        grid[1, 2].set_title("vs Org", fontsize=11, fontweight="bold")
+        roi_axes = [grid[0, 0], grid[0, 1], grid[0, 2], grid[1, 0], grid[1, 1]]
+        all_axes = list(grid.flat)
+
+    for ax in all_axes:
         ax.axis("off")
 
     if ctx["roi"] is not None:
@@ -797,18 +940,11 @@ def api_combined_plot(
         ys, xs = np.where(ctx["roi"])
         x0, x1 = xs.min(), xs.max()
         y0, y1 = ys.min(), ys.max()
-        for ax in axes:
+        for ax in roi_axes:
             ax.add_patch(Rectangle((x0 - 0.5, y0 - 0.5), x1 - x0 + 1, y1 - y0 + 1,
                                     fill=False, edgecolor="#35c6e0", linewidth=1.5,
                                     linestyle="--"))
 
-    summary_keys = ["PSNR", "SSIM", "MSE", "NCC", "HFEN"]
-    parts = []
-    for k in summary_keys:
-        v = metrics_res.get(k)
-        if v is None:
-            continue
-        parts.append(f"{k}={'inf' if v == float('inf') else f'{v:.4f}'}")
     subtitle = f"slice {ctx['slice_idx']}/{max(ctx['max_slices'] - 1, 0)}"
     region_bits = []
     if ctx["roi"] is not None:
@@ -817,26 +953,88 @@ def api_combined_plot(
         region_bits.append("brain mask")
     if region_bits:
         subtitle += f"   |   measured in: {' ∩ '.join(region_bits)}"
-    if parts:
-        subtitle += "   |   " + "   ".join(parts)
+    summary = _metric_summary(metrics_res)
+    if summary and fast is None:
+        subtitle += "   |   " + summary
     if ctx["reg_info"] and not ctx["reg_info"].get("error"):
         r = ctx["reg_info"]
         subtitle += (f"   |   registered ({r['transform_type']}): "
                      f"dx={r['translation_x']:.2f} dy={r['translation_y']:.2f} "
                      f"rot={r['rotation_deg']:.2f}°")
-    fig.suptitle(subtitle, fontsize=9, y=0.06)
+    fig.suptitle(subtitle, fontsize=9, y=0.06 if fast is None else 0.03)
 
-    fig.tight_layout(rect=[0, 0.08, 1, 1])
+    fig.tight_layout(rect=[0, 0.08 if fast is None else 0.05, 1, 1])
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", facecolor="white")
     buf.seek(0)
     return Response(content=buf.getvalue(), media_type="image/png")
 
 
+def _score_volume(arr_a_norm, arr_t_norm, data_range, fovs, roi, brains, meta_a):
+    """Per-slice, per-slice-average and whole-volume metrics for one test side.
+    Returns (slice_metrics_list, avg_metrics, volume_metrics, empty_slices)."""
+    max_slices = arr_a_norm.shape[0]
+    slice_metrics_list = []
+    slice_masks = []  # exact mask scored per slice (None = whole slice)
+    empty_slices = 0
+    for slice_idx in range(max_slices):
+        slice_a = arr_a_norm[slice_idx]
+        slice_t = arr_t_norm[slice_idx]
+        mask = _combine_masks(roi, brains[slice_idx])
+        fov = fovs[slice_idx]
+        if fov is not None and not fov.all():
+            mask = fov if mask is None else (mask & fov)
+        if mask is not None and not mask.any():
+            empty_slices += 1
+            slice_masks.append(np.zeros(slice_a.shape, dtype=bool))
+            slice_metrics_list.append({"slice": slice_idx,
+                                       "metrics": {name: None for name in METRICS}})
+            continue
+        slice_masks.append(mask)
+        metrics_res = compute_metrics(slice_a, slice_t, data_range=data_range, mask=mask,
+                                      spacing=_hd95_spacing(meta_a.spacing, 3, True))
+        slice_metrics_list.append({
+            "slice": slice_idx,
+            "metrics": metrics_res
+        })
+
+    avg_metrics = {}
+    for name in METRICS.keys():
+        valid_vals = [s["metrics"][name] for s in slice_metrics_list if s["metrics"].get(name) is not None]
+        if valid_vals:
+            avg_metrics[name] = float(np.mean(valid_vals))
+        else:
+            avg_metrics[name] = None
+
+    mask_3d = None
+    if any(m is not None for m in slice_masks):
+        mask_3d = np.stack([np.ones(arr_a_norm.shape[1:], dtype=bool) if m is None else m
+                            for m in slice_masks])
+
+    volume_metrics = compute_metrics(arr_a_norm, arr_t_norm, data_range=data_range, mask=mask_3d,
+                                     spacing=_hd95_spacing(meta_a.spacing, 3))
+    return slice_metrics_list, avg_metrics, volume_metrics, empty_slices
+
+
+def _register_volume(side, register_type, sp, label, warnings):
+    """Optionally 3D-register one side onto A. Returns (t_norm, per-slice FOVs)."""
+    arr_a_norm, arr_t_norm = side["a_norm"], side["t_norm"]
+    try:
+        tx, _ = register_3d(arr_a_norm, arr_t_norm, transform_type=register_type, spacing=sp)
+        fov_vol = apply_transform_3d(
+            arr_a_norm, np.ones_like(arr_t_norm, dtype=np.float32), tx, spacing=sp) > 0.5
+        return apply_transform_3d(arr_a_norm, arr_t_norm, tx, spacing=sp), list(fov_vol)
+    except Exception as e:
+        warnings.append(
+            f"{label}: 3D registration failed ({type(e).__name__}: {e}); volume was scored unregistered.")
+        return arr_t_norm, [None] * arr_a_norm.shape[0]
+
+
 @app.post("/api/compare_volume")
 def api_compare_volume(
     file1: list[UploadFile] = File(None),
     file2: list[UploadFile] = File(None),
+    file3: list[UploadFile] = File(None),
     session_id: str = Form(None),
     normalize: bool = Form(False),
     resample: bool = Form(False),
@@ -850,104 +1048,57 @@ def api_compare_volume(
 ):
     try:
         _validate_roi_and_window(roi_x, roi_y, roi_w, roi_h, None, None)
-        arr_a, meta_a, arr_b, meta_b, warnings, session_id = _load_pair(file1, file2, session_id)
+        arr_a, meta_a, arr_b, meta_b, warnings, session_id, arr_c, meta_c = _load_pair(
+            file1, file2, session_id, file3)
+        sides = [("Restore · B", _prepare_side(session_id, "b", "Restore · B", arr_a, meta_a,
+                                               arr_b, meta_b, normalize, resample))]
+        if arr_c is not None:
+            sides.append(("Fast · C", _prepare_side(session_id, "c", "Fast · C", arr_a, meta_a,
+                                                    arr_c, meta_c, normalize, resample)))
     except PipelineError as e:
         return JSONResponse(status_code=e.status_code, content={"error": e.message})
-
-    arr_b_proc = arr_b
-    if resample and meta_a.shape != meta_b.shape:
-        arr_b_proc = _resampled_b(session_id, arr_b, meta_a.shape)
-
-    if arr_a.ndim != arr_b_proc.ndim:
-        return JSONResponse(status_code=400, content={"error": f"NDIM mismatch: {arr_a.ndim} vs {arr_b_proc.ndim}"})
-
-    if arr_a.shape != arr_b_proc.shape:
-        return JSONResponse(status_code=400, content={"error": f"Shape mismatch: {arr_a.shape} vs {arr_b_proc.shape}. Try checking 'Resample'."})
-
-    if normalize:
-        arr_a_norm, arr_b_norm = normalize_pair(arr_a, arr_b_proc)
-        data_range = 1.0
-    else:
-        arr_a_norm, arr_b_norm = arr_a, arr_b_proc
-        range_a = meta_a.intensity_max - meta_a.intensity_min
-        range_b = meta_b.intensity_max - meta_b.intensity_min
-        data_range = max(range_a, range_b, 1e-9)
 
     is_3d = arr_a.ndim == 3
     if not is_3d:
         return JSONResponse(status_code=400, content={"error": "Volume comparison requires 3D inputs."})
 
     max_slices = arr_a.shape[0]
-
-    fovs = [None] * max_slices  # per-slice B field-of-view (None = whole slice)
-    sp = meta_a.spacing if meta_a.spacing is not None and len(meta_a.spacing) == 3 else None
-    if do_register:
-        try:
-            tx, _ = register_3d(arr_a_norm, arr_b_norm, transform_type=register_type, spacing=sp)
-            fov_vol = apply_transform_3d(
-                arr_a_norm, np.ones_like(arr_b_norm, dtype=np.float32), tx, spacing=sp) > 0.5
-            arr_b_norm = apply_transform_3d(arr_a_norm, arr_b_norm, tx, spacing=sp)
-            fovs = list(fov_vol)
-        except Exception as e:
-            warnings = list(warnings) + [
-                f"3D registration failed ({type(e).__name__}: {e}); volume was scored unregistered."]
-
-    roi = _roi_mask(arr_a_norm.shape, roi_x, roi_y, roi_w, roi_h)
+    roi = _roi_mask(arr_a.shape, roi_x, roi_y, roi_w, roi_h)
     if roi is not None and not roi.any():
         return JSONResponse(status_code=400,
                             content={"error": "The selected region contains no pixels to measure."})
 
-    slice_metrics_list = []
-    slice_masks = []  # exact mask scored per slice (None = whole slice)
-    empty_slices = 0
-    for slice_idx in range(max_slices):
-        slice_a = arr_a_norm[slice_idx]
-        slice_b = arr_b_norm[slice_idx]
-        mask = _combine_masks(roi, brain_mask(slice_a) if brain_only else None)
-        fov = fovs[slice_idx]
-        if fov is not None and not fov.all():
-            mask = fov if mask is None else (mask & fov)
-        if mask is not None and not mask.any():
-            empty_slices += 1
-            slice_masks.append(np.zeros(slice_a.shape, dtype=bool))
-            slice_metrics_list.append({"slice": slice_idx,
-                                       "metrics": {name: None for name in METRICS}})
-            continue
-        slice_masks.append(mask)
-        metrics_res = compute_metrics(slice_a, slice_b, data_range=data_range, mask=mask,
-                                      spacing=_hd95_spacing(meta_a.spacing, 3, True))
-        slice_metrics_list.append({
-            "slice": slice_idx,
-            "metrics": metrics_res
+    warnings = list(warnings)
+    sp = meta_a.spacing if meta_a.spacing is not None and len(meta_a.spacing) == 3 else None
+    # One brain mask per slice, taken from the Restore pair's A, shared by both sides.
+    brain_src = sides[0][1]["a_norm"]
+    brains = [brain_mask(brain_src[i]) if brain_only else None for i in range(max_slices)]
+
+    results = []
+    for label, side in sides:
+        arr_t_norm, fovs = side["t_norm"], [None] * max_slices  # per-slice FOV (None = whole slice)
+        if do_register:
+            arr_t_norm, fovs = _register_volume(side, register_type, sp, label, warnings)
+        slice_list, avg, vol, empty = _score_volume(side["a_norm"], arr_t_norm, side["data_range"],
+                                                    fovs, roi, brains, meta_a)
+        if empty:
+            warnings.append(
+                f"{label}: {empty}/{max_slices} slices had no pixels inside the selected region and were skipped."
+                if len(sides) > 1 else
+                f"{empty}/{max_slices} slices had no pixels inside the selected region and were skipped."
+            )
+        results.append({
+            "slice_metrics": [{"slice": s["slice"], "metrics": _json_safe_metrics(s["metrics"])}
+                              for s in slice_list],
+            "average_metrics": _json_safe_metrics(avg),
+            "volume_metrics": _json_safe_metrics(vol),
         })
-    if empty_slices:
-        warnings = list(warnings) + [
-            f"{empty_slices}/{max_slices} slices had no pixels inside the selected region and were skipped."
-        ]
 
-    avg_metrics = {}
-    metric_names = list(METRICS.keys())
-    for name in metric_names:
-        valid_vals = [s["metrics"][name] for s in slice_metrics_list if s["metrics"].get(name) is not None]
-        if valid_vals:
-            avg_metrics[name] = float(np.mean(valid_vals))
-        else:
-            avg_metrics[name] = None
-
-    mask_3d = None
-    if any(m is not None for m in slice_masks):
-        mask_3d = np.stack([np.ones(arr_a.shape[1:], dtype=bool) if m is None else m
-                            for m in slice_masks])
-
-    volume_metrics = compute_metrics(arr_a_norm, arr_b_norm, data_range=data_range, mask=mask_3d,
-                                     spacing=_hd95_spacing(meta_a.spacing, 3))
-
+    restore = results[0]
     return {
         "session_id": session_id,
-        "slice_metrics": [{"slice": s["slice"], "metrics": _json_safe_metrics(s["metrics"])}
-                          for s in slice_metrics_list],
-        "average_metrics": _json_safe_metrics(avg_metrics),
-        "volume_metrics": _json_safe_metrics(volume_metrics),
+        **restore,
+        "fast": results[1] if len(results) > 1 else None,
         "hd95_unit": "mm" if sp else "px",
         "warnings": warnings,
         "max_slices": max_slices

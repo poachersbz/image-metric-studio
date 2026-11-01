@@ -19,12 +19,16 @@ def compute_diff_map(
     colormap: str | None = None,
     amplify: float | None = None,
     percentile_clip: float | None = None,
+    clip_hi: float | None = None,
 ) -> np.ndarray:
     """
     Build a colorized error map for a single 2D slice (pass a 2D array; for
     3D volumes the caller selects a slice first).
 
     mode: "absolute" (|A-B|) or "signed" (A-B, use a diverging cmap).
+    clip_hi: explicit display ceiling for the error magnitude. Pass the same
+    value to several maps (see diff_clip_value) so they share one color scale;
+    None derives it from this map's own percentile.
     Returns a uint8 RGB array (H, W, 3).
     """
     import matplotlib as mpl
@@ -52,13 +56,12 @@ def compute_diff_map(
 
     diff = diff * amplify
 
+    if clip_hi is None:
+        clip_hi = np.percentile(np.abs(diff), percentile_clip) if diff.size else 0.0
+    clip_hi = max(float(clip_hi), 1e-9)
     if mode == "absolute":
-        clip_hi = np.percentile(diff, percentile_clip) if diff.size else 0.0
-        clip_hi = max(clip_hi, 1e-9)
         normed = np.clip(diff / clip_hi, 0.0, 1.0)
     else:
-        clip_hi = np.percentile(np.abs(diff), percentile_clip) if diff.size else 0.0
-        clip_hi = max(clip_hi, 1e-9)
         normed = np.clip(diff / clip_hi, -1.0, 1.0)
         normed = (normed + 1.0) / 2.0  # map [-1, 1] -> [0, 1] for the cmap
 
@@ -73,3 +76,19 @@ def compute_diff_map(
     rgba = cmap(normed)  # (H, W, 4) floats in [0, 1]
     rgb = (rgba[..., :3] * 255).astype(np.uint8)
     return rgb
+
+
+def diff_clip_value(
+    ref: np.ndarray,
+    test: np.ndarray,
+    amplify: float | None = None,
+    percentile_clip: float | None = None,
+) -> float:
+    """Display ceiling compute_diff_map would pick for this pair on its own.
+    Take the max over several pairs to put their error maps on one scale."""
+    amplify = config.DIFFMAP_AMPLIFY if amplify is None else amplify
+    percentile_clip = (
+        config.DIFFMAP_PERCENTILE_CLIP if percentile_clip is None else percentile_clip
+    )
+    diff = np.abs(test.astype(np.float64) - ref.astype(np.float64)) * amplify
+    return float(np.percentile(diff, percentile_clip)) if diff.size else 0.0

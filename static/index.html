@@ -13,7 +13,7 @@
   :root, body{
     --bg:#0a0b0d; --panel:#101216; --panel2:#14171c; --line:rgba(255,255,255,0.08);
     --line2:rgba(255,255,255,0.05); --main:#e8eaed; --muted:#868b94; --faint:#565b63;
-    --signal:#35c6e0; --success:#35d08a; --warning:#e0a52e; --danger:#f0604d;
+    --signal:#35c6e0; --success:#35d08a; --warning:#e0a52e; --danger:#f0604d; --fast:#a78bfa;
   }
   body{background:var(--bg);color:var(--main);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;}
   ::selection{background:rgba(53,198,224,0.28);}
@@ -166,11 +166,17 @@
   .banner-danger .banner-dot{background:var(--danger);box-shadow:0 0 7px var(--danger);}
 
   .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-  @media (max-width:640px){.meta-grid{grid-template-columns:1fr;}}
+  .three-way .meta-grid{grid-template-columns:repeat(3,1fr);}
+  @media (max-width:640px){.meta-grid, .three-way .meta-grid{grid-template-columns:1fr;}}
+
+  /* Fast (C) is optional: its output panels only show in a three-way comparison. */
+  .container:not(.three-way) .c-only{display:none !important;}
+  .three-way .two-only{display:none !important;}
   .meta-box{background:var(--panel);border:1px solid var(--line);padding:16px;}
   .meta-box-title{font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px;}
   .meta-box-title.a{color:var(--signal);}
   .meta-box-title.b{color:var(--warning);}
+  .meta-box-title.c{color:var(--fast);}
   .meta-row{display:flex;justify-content:space-between;font:400 11.5px 'IBM Plex Mono',monospace;padding:4px 0;}
   .meta-row .k{color:var(--faint);}
   .meta-row .v{color:var(--main);}
@@ -193,7 +199,11 @@
   .visual-row.size-large{grid-template-columns:repeat(3,1fr);gap:18px;}
   .visual-row.size-large .visual-frame{aspect-ratio:1;min-height:420px;}
   .visual-row.size-focus{grid-template-columns:1fr 1fr;gap:18px;}
+  .three-way .visual-row.size-focus{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .three-way .visual-row.size-focus .visual-frame{min-height:0;}
   .visual-row.size-focus .visual-frame{aspect-ratio:1;min-height:500px;}
+  .visual-row.size-focus .diff-box{display:none;}
+  @media (max-width:900px){.visual-row.size-focus, .three-way .visual-row.size-focus{grid-template-columns:1fr;}}
 
   .size-selector{display:inline-flex;gap:4px;border:1px solid var(--line);padding:2px;background:#0c0e12;margin-left:auto;}
   .size-btn{padding:3px 8px;background:transparent;border:none;color:var(--muted);font:600 9px 'IBM Plex Mono',monospace;letter-spacing:0.08em;cursor:pointer;text-transform:uppercase;}
@@ -204,6 +214,8 @@
   .visual-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;}
   .visual-head .label{font:500 10px 'IBM Plex Mono',monospace;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;}
   .visual-head .label.signal{color:var(--signal);}
+  .visual-head .label.fast{color:var(--fast);}
+  .visual-head .label.restore{color:var(--warning);}
   .visual-head .tag{font:400 9px 'IBM Plex Mono',monospace;color:var(--faint);}
   .visual-head-right{display:flex;align-items:center;gap:8px;}
   .dl-link{font:400 9px 'IBM Plex Mono',monospace;color:var(--faint);border:1px solid var(--line);padding:2px 6px;cursor:pointer;pointer-events:none;opacity:0.4;}
@@ -230,6 +242,12 @@
   .metric-bar-track{height:4px;background:#0c0e12;border:1px solid var(--line2);position:relative;overflow:hidden;}
   .metric-bar-fill{height:100%;}
   .metric-value{font:600 12.5px 'IBM Plex Mono',monospace;text-align:right;}
+  /* Three-way rows: Metric | Fast | Restore | Δ (Restore - Fast) */
+  .slice-head.three, .metric-row.three{grid-template-columns:64px 1fr 1fr 82px;}
+  .metric-row.three .metric-value{font-size:12px;}
+  .metric-delta{font:600 11px 'IBM Plex Mono',monospace;text-align:right;}
+  .vol-head.three, .vol-row.three{grid-template-columns:minmax(80px,1fr) repeat(4,minmax(78px,auto));column-gap:14px;}
+  .vol-row.three .vol-avg:nth-child(2), .vol-row.three .vol-avg:nth-child(4){color:var(--fast);}
   .metrics-footnote{font:400 9.5px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:12px;line-height:1.6;}
   .vol-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:10px 0;border-bottom:1px solid var(--line2);}
   .vol-name{font:600 11px 'IBM Plex Mono',monospace;color:var(--main);}
@@ -306,24 +324,24 @@
           <span class="sec-line"></span>
         </div>
 
-        <div class="field-label">Reference · A</div>
-        <div class="upload-box" id="uploadBox1">
+        <div class="field-label">Fast · C <span style="text-transform:none;letter-spacing:0;">(optional, undersampled input)</span></div>
+        <div class="upload-box" id="uploadBox3">
           <div class="upload-row">
-            <div class="upload-icon" id="iconA"><span class="dot"></span></div>
+            <div class="upload-icon" id="iconC"><span class="dot"></span></div>
             <div class="upload-text">
-              <div class="upload-name" id="fileName1">No file selected</div>
-              <div class="upload-hint">Drag &amp; drop files or a folder</div>
+              <div class="upload-name" id="fileName3">No file selected</div>
+              <div class="upload-hint">Add for a Fast · Restore · Org comparison</div>
             </div>
           </div>
         </div>
         <div class="browse-row" style="margin-bottom:14px;">
-          <button class="btn-mono" id="btnBrowseFiles1">Browse Files</button>
-          <button class="btn-mono" id="btnBrowseFolder1">Browse Folder</button>
+          <button class="btn-mono" id="btnBrowseFiles3">Browse Files</button>
+          <button class="btn-mono" id="btnBrowseFolder3">Browse Folder</button>
         </div>
-        <input type="file" id="fileInput1" multiple>
-        <input type="file" id="folderInput1" webkitdirectory>
+        <input type="file" id="fileInput3" multiple>
+        <input type="file" id="folderInput3" webkitdirectory>
 
-        <div class="field-label">Test · B</div>
+        <div class="field-label">Restore · B</div>
         <div class="upload-box" id="uploadBox2">
           <div class="upload-row">
             <div class="upload-icon" id="iconB"><span class="dot"></span></div>
@@ -333,12 +351,29 @@
             </div>
           </div>
         </div>
-        <div class="browse-row">
+        <div class="browse-row" style="margin-bottom:14px;">
           <button class="btn-mono" id="btnBrowseFiles2">Browse Files</button>
           <button class="btn-mono" id="btnBrowseFolder2">Browse Folder</button>
         </div>
         <input type="file" id="fileInput2" multiple>
         <input type="file" id="folderInput2" webkitdirectory>
+
+        <div class="field-label">Org · A <span style="text-transform:none;letter-spacing:0;">(reference)</span></div>
+        <div class="upload-box" id="uploadBox1">
+          <div class="upload-row">
+            <div class="upload-icon" id="iconA"><span class="dot"></span></div>
+            <div class="upload-text">
+              <div class="upload-name" id="fileName1">No file selected</div>
+              <div class="upload-hint">Drag &amp; drop files or a folder</div>
+            </div>
+          </div>
+        </div>
+        <div class="browse-row">
+          <button class="btn-mono" id="btnBrowseFiles1">Browse Files</button>
+          <button class="btn-mono" id="btnBrowseFolder1">Browse Folder</button>
+        </div>
+        <input type="file" id="fileInput1" multiple>
+        <input type="file" id="folderInput1" webkitdirectory>
       </section>
 
       <section class="panel">
@@ -354,7 +389,7 @@
         </div>
         <div class="divider2"></div>
         <div class="toggle-row" id="rowResample">
-          <span class="label">Resample B <span class="sub">&rarr; A</span></span>
+          <span class="label">Resample to Org <span class="sub">B, C &rarr; A</span></span>
           <div class="toggle" id="toggleResample"><div class="toggle-knob"></div></div>
         </div>
         <div class="divider2"></div>
@@ -364,16 +399,16 @@
         </div>
         <div class="divider2"></div>
         <div class="toggle-row" id="rowRegister">
-          <span class="label">Register B &rarr; A <span class="sub">align</span></span>
+          <span class="label">Register to Org <span class="sub">B, C &rarr; A</span></span>
           <div class="toggle" id="toggleRegister"><div class="toggle-knob"></div></div>
         </div>
         <div class="divider2"></div>
         <div class="toggle-row" id="rowRoi">
-          <span class="label">Region of interest <span class="sub">drag on A</span></span>
+          <span class="label">Region of interest <span class="sub">drag on Org</span></span>
           <div class="toggle" id="toggleRoi"><div class="toggle-knob"></div></div>
         </div>
         <div id="roiControls" style="display:none; margin-top:10px;">
-          <div class="slider-bounds"><span id="roiReadout">Drag a box on Reference · A</span></div>
+          <div class="slider-bounds"><span id="roiReadout">Drag a box on Org · A</span></div>
           <button class="btn-ghost" id="btnClearRoi" style="margin-top:8px; width:100%;">Clear region</button>
         </div>
         <div class="select-wrap" id="registerTypeWrap" style="margin-top:10px; display:none;">
@@ -395,8 +430,8 @@
         <div class="field-label">Difference Mode</div>
         <div class="select-wrap">
           <select class="field-select" id="selectDiffMode">
-            <option value="absolute">Absolute&nbsp;&nbsp;|A &minus; B|</option>
-            <option value="signed" selected>Signed&nbsp;&nbsp;(A &minus; B)</option>
+            <option value="absolute">Absolute&nbsp;&nbsp;|test &minus; Org|</option>
+            <option value="signed" selected>Signed&nbsp;&nbsp;(test &minus; Org)</option>
           </select>
           <span class="select-caret">&#9660;</span>
         </div>
@@ -453,7 +488,7 @@
         <button class="btn-ghost" id="btnSaveCombined" style="width:100%;" disabled>Save Combined PNG</button>
         <button class="btn-ghost" id="btnSaveAllSlices" style="width:100%; margin-top:8px;" disabled>Save All Slices&hellip;</button>
         <div class="slider-bounds" style="margin-top:8px;">
-          <span id="exportHint">Reference · Test · Error in one figure</span>
+          <span id="exportHint">Images &amp; error maps in one figure</span>
         </div>
       </section>
 
@@ -468,21 +503,29 @@
       <div class="banner banner-danger" id="errorBanner"><span class="banner-dot"></span><span id="errorText"></span></div>
 
       <div class="meta-grid" id="metaContainer" style="display:none;">
-        <div class="meta-box">
-          <div class="meta-box-title a">Reference · A</div>
-          <div class="meta-row"><span class="k">FORMAT</span><span class="v" id="metaAFormat">-</span></div>
-          <div class="meta-row"><span class="k">SHAPE</span><span class="v" id="metaAShape">-</span></div>
-          <div class="meta-row"><span class="k">DTYPE</span><span class="v" id="metaADtype">-</span></div>
-          <div class="meta-row"><span class="k">RANGE</span><span class="v" id="metaARange">-</span></div>
-          <div class="meta-row" id="metaASequenceRow" style="display:none;"><span class="k">SEQUENCE</span><span class="v" id="metaASequence">-</span></div>
+        <div class="meta-box c-only">
+          <div class="meta-box-title c">Fast · C</div>
+          <div class="meta-row"><span class="k">FORMAT</span><span class="v" id="metaCFormat">-</span></div>
+          <div class="meta-row"><span class="k">SHAPE</span><span class="v" id="metaCShape">-</span></div>
+          <div class="meta-row"><span class="k">DTYPE</span><span class="v" id="metaCDtype">-</span></div>
+          <div class="meta-row"><span class="k">RANGE</span><span class="v" id="metaCRange">-</span></div>
+          <div class="meta-row" id="metaCSequenceRow" style="display:none;"><span class="k">SEQUENCE</span><span class="v" id="metaCSequence">-</span></div>
         </div>
-        <div class="meta-box">
-          <div class="meta-box-title b">Test · B</div>
+        <div class="meta-box" id="metaBoxB">
+          <div class="meta-box-title b">Restore · B</div>
           <div class="meta-row"><span class="k">FORMAT</span><span class="v" id="metaBFormat">-</span></div>
           <div class="meta-row"><span class="k">SHAPE</span><span class="v" id="metaBShape">-</span></div>
           <div class="meta-row"><span class="k">DTYPE</span><span class="v" id="metaBDtype">-</span></div>
           <div class="meta-row"><span class="k">RANGE</span><span class="v" id="metaBRange">-</span></div>
           <div class="meta-row" id="metaBSequenceRow" style="display:none;"><span class="k">SEQUENCE</span><span class="v" id="metaBSequence">-</span></div>
+        </div>
+        <div class="meta-box">
+          <div class="meta-box-title a">Org · A</div>
+          <div class="meta-row"><span class="k">FORMAT</span><span class="v" id="metaAFormat">-</span></div>
+          <div class="meta-row"><span class="k">SHAPE</span><span class="v" id="metaAShape">-</span></div>
+          <div class="meta-row"><span class="k">DTYPE</span><span class="v" id="metaADtype">-</span></div>
+          <div class="meta-row"><span class="k">RANGE</span><span class="v" id="metaARange">-</span></div>
+          <div class="meta-row" id="metaASequenceRow" style="display:none;"><span class="k">SEQUENCE</span><span class="v" id="metaASequence">-</span></div>
         </div>
       </div>
 
@@ -493,7 +536,7 @@
             <div class="size-selector">
               <button class="size-btn active" id="btnSizeNormal" type="button">Default</button>
               <button class="size-btn" id="btnSizeLarge" type="button">Large 1.5x</button>
-              <button class="size-btn" id="btnSizeFocus" type="button">A | B Only</button>
+              <button class="size-btn" id="btnSizeFocus" type="button">Images Only</button>
             </div>
             <span class="value" id="sliceCounter">SLICE 00 / 00</span>
           </div>
@@ -504,34 +547,58 @@
         <div class="ruler-hint">&larr;/&rarr; keys step slices · ruler colors = per-slice SSIM (after Compute All Slices)</div>
       </div>
 
+      <!-- One grid: Fast | Restore | Org, then each error map under its image.
+           Without Fast the C panels hide and Restore | Org | Δ fill one row. -->
       <div class="visual-row">
+        <div class="visual-box c-only">
+          <div class="visual-head">
+            <span class="label fast">Fast · C</span>
+            <div class="visual-head-right"><span class="tag">GRAY</span><a class="dl-link" id="dlC" download="fast_c.png">&darr; PNG</a></div>
+          </div>
+          <div class="visual-frame" id="frameC">
+            <img id="imgPreviewC">
+            <div class="roi-rect" id="roiRectC"></div>
+            <div class="visual-placeholder" id="placeholderC">Upload fast data</div>
+          </div>
+        </div>
         <div class="visual-box">
           <div class="visual-head">
-            <span class="label">Reference · A</span>
-            <div class="visual-head-right"><span class="tag">GRAY</span><a class="dl-link" id="dlA" download="reference_a.png">&darr; PNG</a></div>
+            <span class="label restore">Restore · B</span>
+            <div class="visual-head-right"><span class="tag">GRAY</span><a class="dl-link" id="dlB" download="restore_b.png">&darr; PNG</a></div>
+          </div>
+          <div class="visual-frame" id="frameB">
+            <img id="imgPreviewB">
+            <div class="roi-rect" id="roiRectB"></div>
+            <div class="visual-placeholder" id="placeholderB">Upload restored data</div>
+          </div>
+        </div>
+        <div class="visual-box">
+          <div class="visual-head">
+            <span class="label signal">Org · A</span>
+            <div class="visual-head-right"><span class="tag">REF</span><a class="dl-link" id="dlA" download="org_a.png">&darr; PNG</a></div>
           </div>
           <div class="visual-frame" id="frameA">
             <img id="imgPreviewA">
             <div class="roi-rect" id="roiRectA"></div>
             <div class="roi-badge" id="roiBadgeA">ROI</div>
-            <div class="visual-placeholder" id="placeholderA">Upload reference data</div>
+            <div class="visual-placeholder" id="placeholderA">Upload original data</div>
           </div>
         </div>
-        <div class="visual-box">
+        <div class="visual-box diff-box c-only">
           <div class="visual-head">
-            <span class="label">Test · B</span>
-            <div class="visual-head-right"><span class="tag">GRAY</span><a class="dl-link" id="dlB" download="test_b.png">&darr; PNG</a></div>
+            <span class="label fast">&Delta; Fast vs Org</span>
+            <div class="visual-head-right"><span class="tag cmap-tag">B&ndash;K&ndash;R</span><a class="dl-link" id="dlDiffC" download="diff_fast.png">&darr; PNG</a></div>
           </div>
-          <div class="visual-frame" id="frameB">
-            <img id="imgPreviewB">
-            <div class="roi-rect" id="roiRectB"></div>
-            <div class="visual-placeholder" id="placeholderB">Upload test data</div>
+          <div class="visual-frame" id="frameDiffC">
+            <img id="imgDiffMapC">
+            <div class="roi-rect" id="roiRectDiffC"></div>
+            <div class="visual-placeholder" id="placeholderDiffC">Diff map generated after comparison</div>
           </div>
         </div>
-        <div class="visual-box">
+        <div class="visual-box diff-box">
           <div class="visual-head">
-            <span class="label signal">&Delta; Error Map</span>
-            <div class="visual-head-right"><span class="tag" id="cmapLabel">B&ndash;K&ndash;R</span><a class="dl-link" id="dlDiff" download="diff_map.png">&darr; PNG</a></div>
+            <span class="label restore">&Delta; <span class="c-only">Restore vs Org</span><span class="two-only">Error Map</span></span>
+            <div class="visual-head-right"><span class="tag cmap-tag" id="cmapLabel">B&ndash;K&ndash;R</span><a class="dl-link" id="dlDiff" download="diff_restore.png">&darr; PNG</a></div>
           </div>
           <div class="visual-frame" id="frameDiff">
             <img id="imgDiffMap">
@@ -550,7 +617,7 @@
             </div>
             <button class="sec-action" id="btnExportSlice">Export CSV</button>
           </div>
-          <div class="table-head-row slice-head">
+          <div class="table-head-row slice-head" id="sliceHeadRow">
             <span>Metric</span><span>Quality</span><span style="text-align:right;">Score</span>
           </div>
           <div id="sliceMetricsBody">
@@ -569,7 +636,7 @@
               <button class="btn-compute" id="btnRunVolume">Compute All Slices</button>
             </div>
           </div>
-          <div class="table-head-row vol-head">
+          <div class="table-head-row vol-head" id="volHeadRow">
             <span>Metric</span><span style="text-align:right;">Per-Slice Avg</span><span style="text-align:right;min-width:78px;">Whole-Vol</span>
           </div>
           <div id="volumeMetricsBody">
@@ -745,13 +812,20 @@
   const btnBrowseFolder1 = document.getElementById('btnBrowseFolder1');
   const btnBrowseFiles2 = document.getElementById('btnBrowseFiles2');
   const btnBrowseFolder2 = document.getElementById('btnBrowseFolder2');
+  const fileInput3 = document.getElementById('fileInput3');
+  const folderInput3 = document.getElementById('folderInput3');
+  const btnBrowseFiles3 = document.getElementById('btnBrowseFiles3');
+  const btnBrowseFolder3 = document.getElementById('btnBrowseFolder3');
 
   const uploadBox1 = document.getElementById('uploadBox1');
   const uploadBox2 = document.getElementById('uploadBox2');
+  const uploadBox3 = document.getElementById('uploadBox3');
   const fileName1 = document.getElementById('fileName1');
   const fileName2 = document.getElementById('fileName2');
+  const fileName3 = document.getElementById('fileName3');
   const iconA = document.getElementById('iconA');
   const iconB = document.getElementById('iconB');
+  const iconC = document.getElementById('iconC');
   const btnCompare = document.getElementById('btnCompare');
   const btnCompareLabel = document.getElementById('btnCompareLabel');
   const btnRunVolume = document.getElementById('btnRunVolume');
@@ -785,6 +859,8 @@
   const roiRectA = document.getElementById('roiRectA');
   const roiRectB = document.getElementById('roiRectB');
   const roiRectDiff = document.getElementById('roiRectDiff');
+  const roiRectC = document.getElementById('roiRectC');
+  const roiRectDiffC = document.getElementById('roiRectDiffC');
   const roiBadgeA = document.getElementById('roiBadgeA');
 
   const toggleManualWindow = document.getElementById('toggleManualWindow');
@@ -805,12 +881,10 @@
   const btnSizeFocus = document.getElementById('btnSizeFocus');
   const visualRow = document.querySelector('.visual-row');
   const pageContainer = document.querySelector('.container');
-  const frameDiff = document.getElementById('frameDiff');
-  const boxDiff = frameDiff ? frameDiff.closest('.visual-box') : null;
 
   const selectDiffMode = document.getElementById('selectDiffMode');
   const selectDiffCmap = document.getElementById('selectDiffCmap');
-  const cmapLabel = document.getElementById('cmapLabel');
+  const cmapTags = document.querySelectorAll('.cmap-tag');
 
   const metaContainer = document.getElementById('metaContainer');
   const sliderCard = document.getElementById('sliderCard');
@@ -828,7 +902,15 @@
   const dlA = document.getElementById('dlA');
   const dlB = document.getElementById('dlB');
   const dlDiff = document.getElementById('dlDiff');
+  const imgPreviewC = document.getElementById('imgPreviewC');
+  const imgDiffMapC = document.getElementById('imgDiffMapC');
+  const placeholderC = document.getElementById('placeholderC');
+  const placeholderDiffC = document.getElementById('placeholderDiffC');
+  const dlC = document.getElementById('dlC');
+  const dlDiffC = document.getElementById('dlDiffC');
 
+  const sliceHeadRow = document.getElementById('sliceHeadRow');
+  const volHeadRow = document.getElementById('volHeadRow');
   const sliceMetricsBody = document.getElementById('sliceMetricsBody');
   const volumeMetricsBody = document.getElementById('volumeMetricsBody');
   const chartToggles = document.getElementById('chartToggles');
@@ -846,6 +928,10 @@
   const METRIC_COLORS = { PSNR: '#e0a52e', SSIM: '#35c6e0', 'MS-SSIM': '#5fd6ea', MSE: '#f0604d', RMSE: '#fb923c', MAE: '#f472b6', NRMSE: '#facc15', NCC: '#35d08a', MI: '#a78bfa', NMI: '#60a5fa', HFEN: '#34d399', GMSD: '#c084fc', Dice: '#ec4899', 'Jaccard (IoU)': '#f43f5e', HD95: '#e11d48', 'FFT Error': '#8b5cf6' };
   const BOUNDED_01 = new Set(['SSIM', 'MS-SSIM', 'NCC', 'NMI', 'Dice', 'Jaccard (IoU)']);
   const HIGHER_BETTER = new Set(['SSIM', 'MS-SSIM', 'NCC', 'MI', 'NMI', 'Dice', 'Jaccard (IoU)']);
+  const SLICE_HEAD_TWO = '<span>Metric</span><span>Quality</span><span style="text-align:right;">Score</span>';
+  const SLICE_HEAD_THREE = '<span>Metric</span><span style="text-align:right;">Fast</span><span style="text-align:right;">Restore</span><span style="text-align:right;">&Delta; R&minus;F</span>';
+  const VOL_HEAD_TWO = '<span>Metric</span><span style="text-align:right;">Per-Slice Avg</span><span style="text-align:right;min-width:78px;">Whole-Vol</span>';
+  const VOL_HEAD_THREE = '<span>Metric</span><span style="text-align:right;">Fast &middot; avg</span><span style="text-align:right;">Restore &middot; avg</span><span style="text-align:right;">Fast &middot; vol</span><span style="text-align:right;min-width:78px;">Restore &middot; vol</span>';
 
   let volumeChartInstance = null;
   let currentSessionId = null;
@@ -858,6 +944,11 @@
   let lastVolumeAvg = null;
   let lastVolumeWhole = null;
   let lastVolumeSliceMetrics = null;
+  // Fast (C) vs Org counterparts; all null in a two-way comparison.
+  let lastFastSliceMetrics = null;
+  let lastFastVolumeAvg = null;
+  let lastFastVolumeWhole = null;
+  let lastFastVolumeSliceMetrics = null;
 
   // ---------- Batch queue ----------
   let jobs = [];
@@ -866,7 +957,7 @@
 
   function createJob() {
     jobCounter++;
-    const job = { id: jobCounter, label: 'Pair ' + jobCounter, files1: [], files2: [], sessionId: null };
+    const job = { id: jobCounter, label: 'Pair ' + jobCounter, files1: [], files2: [], files3: [], sessionId: null };
     jobs.push(job);
     return job;
   }
@@ -901,10 +992,14 @@
     imgPreviewA.style.display = 'none'; placeholderA.style.display = 'block';
     imgPreviewB.style.display = 'none'; placeholderB.style.display = 'block';
     imgDiffMap.style.display = 'none'; placeholderDiff.style.display = 'block';
-    [dlA, dlB, dlDiff].forEach(a => { a.classList.remove('ready'); a.href = '#'; });
+    imgPreviewC.style.display = 'none'; placeholderC.style.display = 'block';
+    imgDiffMapC.style.display = 'none'; placeholderDiffC.style.display = 'block';
+    [dlA, dlB, dlDiff, dlC, dlDiffC].forEach(a => { a.classList.remove('ready'); a.href = '#'; });
     sliceMetricsBody.innerHTML = '<div class="metrics-footnote">Run comparison to calculate metrics</div>';
     volumeMetricsBody.innerHTML = '<div class="metrics-footnote">Compute whole volume metrics to summarize</div>';
     lastSliceMetrics = null; lastVolumeAvg = null; lastVolumeWhole = null; lastVolumeSliceMetrics = null;
+    lastFastSliceMetrics = null; lastFastVolumeAvg = null; lastFastVolumeWhole = null; lastFastVolumeSliceMetrics = null;
+    setThreeWay(false);
     if (volumeChartInstance) { volumeChartInstance.destroy(); volumeChartInstance = null; }
     chartHint.style.display = 'flex';
     btnRunVolume.textContent = 'Compute All Slices';
@@ -915,11 +1010,11 @@
     sessionChip.textContent = 'NO SESSION';
     btnSaveCombined.disabled = true;
     btnSaveAllSlices.disabled = true;
-    setExportHint('Reference · Test · Error in one figure');
+    setExportHint('Images & error maps in one figure');
     windowInitialized = false;   // next dataset re-seeds WL/WW from its own DICOM
     pendingWindowReset = false;
     roi = null; roiDragStart = null;
-    [roiRectA, roiRectB, roiRectDiff].forEach(el => el.classList.remove('show'));
+    [roiRectA, roiRectB, roiRectDiff, roiRectC, roiRectDiffC].forEach(el => el.classList.remove('show'));
     roiBadgeA.classList.remove('show');
     setStatus('IDLE');
   }
@@ -930,6 +1025,7 @@
     currentSessionId = job.sessionId;
     updateFileLabel(job.files1, fileName1, iconA);
     updateFileLabel(job.files2, fileName2, iconB);
+    updateFileLabel(job.files3, fileName3, iconC);
     checkInputs();
     renderQueue();
     clearWorkspace();
@@ -966,6 +1062,16 @@
   }
 
   btnAddPair.addEventListener('click', addJob);
+
+  // Three-way mode (a Fast · C input is loaded) shows the C panels and switches
+  // the metric tables to Fast | Restore columns.
+  function setThreeWay(on) {
+    pageContainer.classList.toggle('three-way', on);
+    sliceHeadRow.classList.toggle('three', on);
+    sliceHeadRow.innerHTML = on ? SLICE_HEAD_THREE : SLICE_HEAD_TWO;
+    volHeadRow.classList.toggle('three', on);
+    volHeadRow.innerHTML = on ? VOL_HEAD_THREE : VOL_HEAD_TWO;
+  }
 
   function setStatus(text, kind) {
     statusChipText.textContent = text;
@@ -1023,7 +1129,7 @@
     return files;
   }
 
-  [uploadBox1, uploadBox2].forEach((box, idx) => {
+  [uploadBox1, uploadBox2, uploadBox3].forEach((box, idx) => {
     box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('dragover'); });
     box.addEventListener('dragleave', () => { box.classList.remove('dragover'); });
     box.addEventListener('drop', async (e) => {
@@ -1043,7 +1149,8 @@
       }
       if (files.length > 0 && dropJob.id === activeJobId) {
         if (idx === 0) { dropJob.files1 = files; updateFileLabel(dropJob.files1, fileName1, iconA); }
-        else { dropJob.files2 = files; updateFileLabel(dropJob.files2, fileName2, iconB); }
+        else if (idx === 1) { dropJob.files2 = files; updateFileLabel(dropJob.files2, fileName2, iconB); }
+        else { dropJob.files3 = files; updateFileLabel(dropJob.files3, fileName3, iconC); }
         renderQueue();
         checkInputs();
       }
@@ -1054,6 +1161,8 @@
   btnBrowseFolder1.addEventListener('click', (e) => { e.stopPropagation(); folderInput1.click(); });
   btnBrowseFiles2.addEventListener('click', (e) => { e.stopPropagation(); fileInput2.click(); });
   btnBrowseFolder2.addEventListener('click', (e) => { e.stopPropagation(); folderInput2.click(); });
+  btnBrowseFiles3.addEventListener('click', (e) => { e.stopPropagation(); fileInput3.click(); });
+  btnBrowseFolder3.addEventListener('click', (e) => { e.stopPropagation(); folderInput3.click(); });
 
   [fileInput1, folderInput1].forEach(input => {
     input.addEventListener('change', () => {
@@ -1076,6 +1185,19 @@
         const job = getActiveJob();
         job.files2 = Array.from(input.files);
         updateFileLabel(job.files2, fileName2, iconB);
+        renderQueue();
+        checkInputs();
+      }
+    });
+  });
+  [fileInput3, folderInput3].forEach(input => {
+    input.addEventListener('change', () => {
+      resetSession();
+      clearWorkspace();
+      if (input.files.length) {
+        const job = getActiveJob();
+        job.files3 = Array.from(input.files);
+        updateFileLabel(job.files3, fileName3, iconC);
         renderQueue();
         checkInputs();
       }
@@ -1142,14 +1264,15 @@
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
   }
 
-  // Paint the same rectangle onto all three panels, positioned against each
+  // Paint the same rectangle onto every panel, positioned against each
   // panel's own rendered image box.
   function renderRoiOverlays() {
-    const panels = [[roiRectA, imgPreviewA], [roiRectB, imgPreviewB], [roiRectDiff, imgDiffMap]];
+    const panels = [[roiRectA, imgPreviewA], [roiRectB, imgPreviewB], [roiRectDiff, imgDiffMap],
+                    [roiRectC, imgPreviewC], [roiRectDiffC, imgDiffMapC]];
     if (!roi) {
       panels.forEach(([el]) => el.classList.remove('show'));
       roiBadgeA.classList.remove('show');
-      roiReadout.textContent = getRoiEnabled() ? 'Drag a box on Reference · A' : '';
+      roiReadout.textContent = getRoiEnabled() ? 'Drag a box on Org · A' : '';
       return;
     }
     panels.forEach(([el, img]) => {
@@ -1295,8 +1418,12 @@
       runSliceComparison(parseInt(sliceSlider.value || 0));
     }
   }
+  function updateCmapTags() {
+    const text = CMAP_LABELS[selectDiffCmap.value] || selectDiffCmap.value.toUpperCase();
+    cmapTags.forEach(tag => { tag.textContent = text; });
+  }
   [selectDiffMode, selectDiffCmap].forEach(el => el.addEventListener('change', () => {
-    cmapLabel.textContent = CMAP_LABELS[selectDiffCmap.value] || selectDiffCmap.value.toUpperCase();
+    updateCmapTags();
     onTuningChange();
   }));
 
@@ -1324,6 +1451,7 @@
     } else {
       for (const file of reqJob.files1) formData.append('file1', file, file.relativePath || file.webkitRelativePath || file.name);
       for (const file of reqJob.files2) formData.append('file2', file, file.relativePath || file.webkitRelativePath || file.name);
+      for (const file of reqJob.files3) formData.append('file3', file, file.relativePath || file.webkitRelativePath || file.name);
     }
     formData.append('slice_idx', sliceIdx);
     formData.append('normalize', getNormalize());
@@ -1359,14 +1487,17 @@
       sessionChip.textContent = `SESSION ${currentSessionId.slice(0, 8).toUpperCase()}`;
       setStatus('READY');
 
+      const fast = data.fast || null;
+      setThreeWay(!!fast);
+
       if (isInitialUpload) {
-        successText.textContent = `Datasets loaded & verified — ${data.is_3d ? `3D volume · ${data.max_slices} slices detected` : '2D image detected'} · shapes match`;
+        successText.textContent = `Datasets loaded & verified — ${fast ? 'Fast · Restore · Org' : 'Restore · Org'} · ${data.is_3d ? `3D volume · ${data.max_slices} slices detected` : '2D image detected'} · shapes match`;
         successBanner.classList.add('show');
         btnCompareLabel.textContent = 'Reload Datasets';
       }
 
       metaContainer.style.display = 'grid';
-      populateMetadata(data.meta_a, data.meta_b);
+      populateMetadata(data.meta_a, data.meta_b, fast && fast.meta);
 
       if (data.warnings && data.warnings.length > 0) {
         warningText.textContent = data.warnings.join(' | ');
@@ -1379,7 +1510,13 @@
       dlA.href = data.preview_a; dlA.classList.add('ready');
       dlB.href = data.preview_b; dlB.classList.add('ready');
       dlDiff.href = data.diff_map; dlDiff.classList.add('ready');
-      cmapLabel.textContent = CMAP_LABELS[selectDiffCmap.value] || selectDiffCmap.value.toUpperCase();
+      if (fast) {
+        imgPreviewC.src = fast.preview; imgPreviewC.style.display = 'block'; placeholderC.style.display = 'none';
+        imgDiffMapC.src = fast.diff_map; imgDiffMapC.style.display = 'block'; placeholderDiffC.style.display = 'none';
+        dlC.href = fast.preview; dlC.classList.add('ready');
+        dlDiffC.href = fast.diff_map; dlDiffC.classList.add('ready');
+      }
+      updateCmapTags();
 
       syncWindowFromResponse(data.window);
       btnSaveCombined.disabled = false;
@@ -1403,7 +1540,8 @@
 
       hd95Unit = data.hd95_unit || 'px';
       lastSliceMetrics = reviveMetrics(data.metrics);
-      populateMetricsTable(lastSliceMetrics);
+      lastFastSliceMetrics = fast ? reviveMetrics(fast.metrics) : null;
+      populateMetricsTable(lastSliceMetrics, lastFastSliceMetrics);
 
       if (data.is_3d) {
         sliderCard.classList.add('show');
@@ -1497,6 +1635,7 @@
     } else {
       for (const file of reqJob.files1) formData.append('file1', file, file.relativePath || file.webkitRelativePath || file.name);
       for (const file of reqJob.files2) formData.append('file2', file, file.relativePath || file.webkitRelativePath || file.name);
+      for (const file of reqJob.files3) formData.append('file3', file, file.relativePath || file.webkitRelativePath || file.name);
     }
     formData.append('normalize', getNormalize());
     formData.append('resample', getResample());
@@ -1528,10 +1667,20 @@
       lastVolumeSliceMetrics = (data.slice_metrics || []).map(
         s => ({ slice: s.slice, metrics: reviveMetrics(s.metrics) })
       );
+      const fast = data.fast || null;
+      lastFastVolumeAvg = fast ? reviveMetrics(fast.average_metrics) : null;
+      lastFastVolumeWhole = fast ? reviveMetrics(fast.volume_metrics) : null;
+      lastFastVolumeSliceMetrics = fast ? fast.slice_metrics.map(
+        s => ({ slice: s.slice, metrics: reviveMetrics(s.metrics) })
+      ) : null;
+      if (data.warnings && data.warnings.length > 0) {
+        warningText.textContent = data.warnings.join(' | ');
+        warningBanner.classList.add('show');
+      }
 
-      populateVolumeTable(lastVolumeAvg, lastVolumeWhole);
+      populateVolumeTable(lastVolumeAvg, lastVolumeWhole, lastFastVolumeAvg, lastFastVolumeWhole);
       renderChartToggles();
-      drawVolumeChart(lastVolumeSliceMetrics);
+      drawVolumeChart(lastVolumeSliceMetrics, lastFastVolumeSliceMetrics);
       buildRuler(lastVolumeSliceMetrics);
       btnRunVolume.textContent = 'Recompute';
       btnRunVolume.classList.add('done');
@@ -1559,18 +1708,18 @@
     }
   }
 
-  function populateMetadata(a, b) {
-    document.getElementById('metaAFormat').textContent = a.kind.toUpperCase();
-    document.getElementById('metaAShape').textContent = a.shape.join(' × ');
-    document.getElementById('metaADtype').textContent = a.dtype;
-    document.getElementById('metaARange').textContent = `[${a.min.toFixed(2)}, ${a.max.toFixed(2)}]`;
-    setSequenceRow('metaASequenceRow', 'metaASequence', a.sequence);
+  function populateMetaBox(key, m) {
+    document.getElementById(`meta${key}Format`).textContent = m.kind.toUpperCase();
+    document.getElementById(`meta${key}Shape`).textContent = m.shape.join(' × ');
+    document.getElementById(`meta${key}Dtype`).textContent = m.dtype;
+    document.getElementById(`meta${key}Range`).textContent = `[${m.min.toFixed(2)}, ${m.max.toFixed(2)}]`;
+    setSequenceRow(`meta${key}SequenceRow`, `meta${key}Sequence`, m.sequence);
+  }
 
-    document.getElementById('metaBFormat').textContent = b.kind.toUpperCase();
-    document.getElementById('metaBShape').textContent = b.shape.join(' × ');
-    document.getElementById('metaBDtype').textContent = b.dtype;
-    document.getElementById('metaBRange').textContent = `[${b.min.toFixed(2)}, ${b.max.toFixed(2)}]`;
-    setSequenceRow('metaBSequenceRow', 'metaBSequence', b.sequence);
+  function populateMetadata(a, b, c) {
+    populateMetaBox('A', a);
+    populateMetaBox('B', b);
+    if (c) populateMetaBox('C', c);
   }
 
   function qualityColor(name, val) {
@@ -1603,8 +1752,39 @@
     return val.toFixed(4);
   }
 
-  function populateMetricsTable(metrics) {
+  const LOWER_BETTER = new Set(['MSE', 'RMSE', 'MAE', 'NRMSE', 'HFEN', 'GMSD', 'HD95', 'FFT Error']);
+
+  // Restore minus Fast, colored by whether Restore moved the metric the right way.
+  function deltaCell(name, fastVal, restoreVal) {
+    if (fastVal === null || restoreVal === null || fastVal === undefined || restoreVal === undefined
+        || !isFinite(fastVal) || !isFinite(restoreVal)) {
+      return '<span class="metric-delta" style="color:var(--faint);">&mdash;</span>';
+    }
+    const d = restoreVal - fastVal;
+    const better = (name === 'PSNR' || HIGHER_BETTER.has(name)) ? d > 0 : LOWER_BETTER.has(name) ? d < 0 : null;
+    const color = d === 0 || better === null ? 'var(--muted)' : better ? 'var(--success)' : 'var(--danger)';
+    const digits = name === 'PSNR' ? 2 : (name === 'MSE' || name === 'RMSE') ? 5 : 4;
+    const text = (d > 0 ? '+' : '') + d.toFixed(digits) + (name === 'PSNR' ? ' dB' : unitSfx(name));
+    return `<span class="metric-delta" style="color:${color};">${text}</span>`;
+  }
+
+  function populateMetricsTable(metrics, fastMetrics) {
     sliceMetricsBody.innerHTML = '';
+    if (fastMetrics) {
+      for (const [name, val] of Object.entries(metrics)) {
+        const fastVal = fastMetrics[name] === undefined ? null : fastMetrics[name];
+        const row = document.createElement('div');
+        row.className = 'metric-row three';
+        row.innerHTML = `
+          <span class="metric-name">${name}</span>
+          <span class="metric-value" style="color:${qualityColor(name, fastVal)};">${fmtVal(name, fastVal)}</span>
+          <span class="metric-value" style="color:${qualityColor(name, val)};">${fmtVal(name, val)}</span>
+          ${deltaCell(name, fastVal, val)}
+        `;
+        sliceMetricsBody.appendChild(row);
+      }
+      return;
+    }
     for (const [name, val] of Object.entries(metrics)) {
       const color = qualityColor(name, val);
       const bar = qualityBar(name, val);
@@ -1619,19 +1799,27 @@
     }
   }
 
-  function populateVolumeTable(avg, vol) {
+  function volCell(name, raw) {
+    const v = (raw === 'inf' || raw === Infinity) ? Infinity : (raw !== null && raw !== undefined) ? Number(raw) : null;
+    return (v !== null && !isNaN(v)) ? (v === Infinity ? '∞' : v.toFixed(4) + unitSfx(name)) : 'N/A';
+  }
+
+  function populateVolumeTable(avg, vol, fastAvg, fastVol) {
     volumeMetricsBody.innerHTML = '';
+    const three = !!(fastAvg && fastVol);
     for (const name of Object.keys(vol)) {
-      const rawAvg = avg ? avg[name] : null;
-      const rawVol = vol ? vol[name] : null;
-      const avgVal = (rawAvg === 'inf' || rawAvg === Infinity) ? Infinity : (rawAvg !== null && rawAvg !== undefined) ? Number(rawAvg) : null;
-      const volVal = (rawVol === 'inf' || rawVol === Infinity) ? Infinity : (rawVol !== null && rawVol !== undefined) ? Number(rawVol) : null;
       const row = document.createElement('div');
-      row.className = 'vol-row';
-      row.innerHTML = `
+      row.className = three ? 'vol-row three' : 'vol-row';
+      row.innerHTML = three ? `
         <span class="vol-name">${name}</span>
-        <span class="vol-avg">${(avgVal !== null && !isNaN(avgVal)) ? (avgVal === Infinity ? '∞' : avgVal.toFixed(4) + unitSfx(name)) : 'N/A'}</span>
-        <span class="vol-val">${(volVal !== null && !isNaN(volVal)) ? (volVal === Infinity ? '∞' : volVal.toFixed(4) + unitSfx(name)) : 'N/A'}</span>
+        <span class="vol-avg">${volCell(name, fastAvg[name])}</span>
+        <span class="vol-avg">${volCell(name, avg ? avg[name] : null)}</span>
+        <span class="vol-avg">${volCell(name, fastVol[name])}</span>
+        <span class="vol-val">${volCell(name, vol[name])}</span>
+      ` : `
+        <span class="vol-name">${name}</span>
+        <span class="vol-avg">${volCell(name, avg ? avg[name] : null)}</span>
+        <span class="vol-val">${volCell(name, vol ? vol[name] : null)}</span>
       `;
       volumeMetricsBody.appendChild(row);
     }
@@ -1664,20 +1852,29 @@
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }
+  const csvVal = v => (v === null || v === undefined) ? '' : v === Infinity ? 'inf' : v === -Infinity ? '-inf' : v;
+
   btnExportSlice.addEventListener('click', () => {
     if (!lastSliceMetrics) return;
-    const rows = [['metric', 'value']];
+    const fast = lastFastSliceMetrics;
+    const rows = [fast ? ['metric', 'fast_vs_org', 'restore_vs_org'] : ['metric', 'value']];
     for (const [name, val] of Object.entries(lastSliceMetrics)) {
-      rows.push([name, val === null ? '' : val === Infinity ? 'inf' : val]);
+      rows.push(fast ? [name, csvVal(fast[name]), csvVal(val)] : [name, csvVal(val)]);
     }
     downloadBlob(toCSV(rows), `slice_${sliceSlider.value || 0}_metrics.csv`);
   });
   btnExportVolume.addEventListener('click', () => {
     if (!lastVolumeSliceMetrics) return;
     const names = Object.keys(lastVolumeSliceMetrics[0].metrics);
-    const rows = [['slice', ...names]];
-    lastVolumeSliceMetrics.forEach(s => {
-      rows.push([s.slice, ...names.map(n => { const v = s.metrics[n]; return v === null ? '' : v === Infinity ? 'inf' : v; })]);
+    const fast = lastFastVolumeSliceMetrics;
+    // Three-way: one column per metric and side, e.g. SSIM_fast, SSIM_restore.
+    const rows = [fast
+      ? ['slice', ...names.flatMap(n => [`${n}_fast`, `${n}_restore`])]
+      : ['slice', ...names]];
+    lastVolumeSliceMetrics.forEach((s, i) => {
+      rows.push(fast
+        ? [s.slice, ...names.flatMap(n => [csvVal(fast[i].metrics[n]), csvVal(s.metrics[n])])]
+        : [s.slice, ...names.map(n => csvVal(s.metrics[n]))]);
     });
     downloadBlob(toCSV(rows), 'volume_per_slice_metrics.csv');
   });
@@ -1693,6 +1890,7 @@
     } else if (job) {
       for (const file of job.files1) formData.append('file1', file, file.relativePath || file.webkitRelativePath || file.name);
       for (const file of job.files2) formData.append('file2', file, file.relativePath || file.webkitRelativePath || file.name);
+      for (const file of job.files3) formData.append('file3', file, file.relativePath || file.webkitRelativePath || file.name);
     }
     formData.append('slice_idx', sliceIdx);
     formData.append('normalize', getNormalize());
@@ -1817,13 +2015,15 @@
         if (activeChartMetrics.has(name)) activeChartMetrics.delete(name);
         else activeChartMetrics.add(name);
         renderChartToggles();
-        if (lastVolumeSliceMetrics) drawVolumeChart(lastVolumeSliceMetrics);
+        if (lastVolumeSliceMetrics) drawVolumeChart(lastVolumeSliceMetrics, lastFastVolumeSliceMetrics);
       });
       chartToggles.appendChild(chip);
     });
   }
 
-  function drawVolumeChart(sliceMetrics) {
+  // fastMetrics (optional): Fast vs Org per slice, drawn as a faint twin of
+  // each Restore line so the gap between them reads as the restoration gain.
+  function drawVolumeChart(sliceMetrics, fastMetrics) {
     const slices = sliceMetrics.map(s => s.slice);
     const ctx = document.getElementById('volumeChart').getContext('2d');
     if (volumeChartInstance) volumeChartInstance.destroy();
@@ -1832,8 +2032,21 @@
     const datasets = [];
     ALL_METRICS.forEach(name => {
       if (!activeChartMetrics.has(name)) return;
+      if (fastMetrics) {
+        datasets.push({
+          label: `${name} · Fast`,
+          data: fastMetrics.map(s => s.metrics[name]),
+          borderColor: METRIC_COLORS[name] + '66',
+          backgroundColor: 'transparent',
+          borderWidth: 1,
+          pointRadius: 0,
+          tension: 0.25,
+          borderDash: BOUNDED_01.has(name) ? [] : [3, 3],
+          yAxisID: BOUNDED_01.has(name) ? 'y' : 'y1'
+        });
+      }
       datasets.push({
-        label: name,
+        label: fastMetrics ? `${name} · Restore` : name,
         data: sliceMetrics.map(s => s.metrics[name]),
         borderColor: METRIC_COLORS[name],
         backgroundColor: 'transparent',
@@ -2408,16 +2621,16 @@
 
     visualRow.classList.remove('size-large', 'size-focus');
     pageContainer.classList.remove('focus-layout');
-    if (boxDiff) boxDiff.style.display = 'block';
 
+    // Error-map panels hide via CSS (.size-focus .diff-box) in focus mode.
     if (mode === 'large') {
       visualRow.classList.add('size-large');
       pageContainer.classList.add('focus-layout');
     } else if (mode === 'focus') {
       visualRow.classList.add('size-focus');
       pageContainer.classList.add('focus-layout');
-      if (boxDiff) boxDiff.style.display = 'none';
     }
+    renderRoiOverlays();
   }
 
   btnSizeNormal.addEventListener('click', () => setCompareSizeMode('normal'));
